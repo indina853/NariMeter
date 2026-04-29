@@ -1,18 +1,23 @@
 using System;
+using System.Collections.Generic;
 
 namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int MinMv              = 3296;
-    private const int MaxMv              = 4128;
-    private const int ChargingThreshold  = 4160;
-    private const int StabilizationTicks = 3;
+    private const int MinMv                = 3296;
+    private const int MaxMv                = 4128;
+    private const int StabilizationTicks   = 3;
+    private const int TrendSamples         = 4;
+    private const int TrendRisingThreshold = 8;
 
     private int  _lastValidPercent;
     private int  _stabilizationCounter;
     private bool _stabilizing;
     private bool _initialized;
+
+    private readonly Queue<int> _mvHistory = new();
+    private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
 
     public BatteryReader()
     {
@@ -30,20 +35,20 @@ public sealed class BatteryReader
             if (!poweredOn || mv == 0)
                 return HeadsetState.PoweredOff;
 
-            int pct = ComputePercent(mv);
-            _lastValidPercent = pct;
-            StateStore.SavePercent(pct);
-            return new HeadsetState(pct, mv > ChargingThreshold
-                ? ChargeStatus.Charging
-                : ChargeStatus.Discharging);
+            _mvHistory.Enqueue(mv);
+            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
 
         if (!poweredOn)
             return HeadsetState.PoweredOff;
 
-        return new HeadsetState(_lastValidPercent, mv > ChargingThreshold
-            ? ChargeStatus.Charging
-            : ChargeStatus.Discharging);
+        _mvHistory.Enqueue(mv);
+        if (_mvHistory.Count > TrendSamples)
+            _mvHistory.Dequeue();
+
+        _lastChargeStatus = DetectChargeStatus();
+
+        return new HeadsetState(_lastValidPercent, _lastChargeStatus);
     }
 
     public HeadsetState PollBattery()
@@ -53,6 +58,12 @@ public sealed class BatteryReader
 
         if (!poweredOn) return HeadsetState.PoweredOff;
 
+        _mvHistory.Enqueue(mv);
+        if (_mvHistory.Count > TrendSamples)
+            _mvHistory.Dequeue();
+
+        _lastChargeStatus = DetectChargeStatus();
+
         if (_stabilizing)
         {
             _stabilizationCounter++;
@@ -61,14 +72,14 @@ public sealed class BatteryReader
             _stabilizing = false;
         }
 
-        if (mv > ChargingThreshold)
+        if (_lastChargeStatus == ChargeStatus.Charging)
         {
             return _lastValidPercent >= 100
                 ? new HeadsetState(100, ChargeStatus.FullyCharged)
                 : new HeadsetState(_lastValidPercent, ChargeStatus.Charging);
         }
 
-        int percent = ComputePercent(mv);
+        int percent       = ComputePercent(mv);
         _lastValidPercent = percent;
         StateStore.SavePercent(percent);
         return new HeadsetState(percent, ChargeStatus.Discharging);
@@ -78,6 +89,25 @@ public sealed class BatteryReader
     {
         _stabilizing          = true;
         _stabilizationCounter = 0;
+        _lastChargeStatus     = ChargeStatus.Discharging;
+        _mvHistory.Clear();
+    }
+
+    private ChargeStatus DetectChargeStatus()
+    {
+        if (_mvHistory.Count < TrendSamples)
+            return _lastChargeStatus;
+
+        var samples = _mvHistory.ToArray();
+        int delta   = samples[^1] - samples[0];
+
+        if (delta >= TrendRisingThreshold)
+            return ChargeStatus.Charging;
+
+        if (delta <= -TrendRisingThreshold)
+            return ChargeStatus.Discharging;
+
+        return _lastChargeStatus;
     }
 
     private static int ComputePercent(int mv) =>
