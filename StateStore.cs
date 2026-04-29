@@ -9,30 +9,39 @@ public static class StateStore
     private static readonly string FilePath =
         Path.Combine(AppContext.BaseDirectory, "NariMeter.state.json");
 
-    private record PersistedState(int LastValidPercent);
+    private record PersistedState(int LastValidPercent, int LastValidMv);
 
     public static int LoadLastPercent()
     {
         try
         {
             if (!File.Exists(FilePath)) return 50;
-            var json = File.ReadAllText(FilePath);
-            var state = JsonSerializer.Deserialize<PersistedState>(json);
+            var state = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(FilePath));
             return state?.LastValidPercent ?? 50;
         }
-        catch
-        {
-            return 50;
-        }
+        catch { return 50; }
     }
 
-    public static void SavePercent(int percent)
+    public static int LoadLastMv()
     {
         try
         {
-            var json = JsonSerializer.Serialize(new PersistedState(percent));
+            if (!File.Exists(FilePath)) return 0;
+            var state = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(FilePath));
+            return state?.LastValidMv ?? 0;
+        }
+        catch { return 0; }
+    }
+
+    public static void SaveState(int percent, int mv)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(new PersistedState(percent, mv));
             File.WriteAllText(FilePath, json);
         }
         catch { }
     }
+    
+    public static void SavePercent(int percent) => SaveState(percent, 0);
 }
