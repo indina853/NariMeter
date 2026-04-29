@@ -27,4 +27,3 @@ public record HeadsetState(int BatteryPercent, ChargeStatus Status)
     public bool IsInactive =>
         Status is ChargeStatus.Disconnected or ChargeStatus.PoweredOff;
 }
-
