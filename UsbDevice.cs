@@ -6,10 +6,10 @@ namespace NariMeter;
 
 public static class UsbDevice
 {
-    private const int VendorId       = 0x1532;
-    private const int ProductId      = 0x051C;
-    private const int Interface      = 5;
-    private const int IdleThreshold  = 4;
+    private const int VendorId        = 0x1532;
+    private const int ProductId       = 0x051C;
+    private const int Interface       = 5;
+    private const int IdleThreshold   = 4;
     private const int ActiveThreshold = 4;
 
     private static readonly byte[] SetData = new byte[64]
@@ -23,15 +23,17 @@ public static class UsbDevice
 
     private static readonly byte[] Response = new byte[64];
 
-    private static int  _idleCount    = 0;
-    private static int  _activeCount  = 0;
-    private static bool _initialized  = false;
-    private static bool _poweredOn    = false;
+    private static int  _idleCount   = 0;
+    private static int  _activeCount = 0;
+    private static bool _initialized = false;
+    private static bool _poweredOn   = false;
 
-    public static bool TryRead(out int millivolts, out bool poweredOn)
+    public static bool TryRead(out int millivolts, out bool poweredOn, out bool isCharging, out int percent)
     {
         millivolts = 0;
         poweredOn  = false;
+        isCharging = false;
+        percent    = 0;
 
         LibUsbDotNet.UsbDevice? device = null;
         try
@@ -53,9 +55,11 @@ public static class UsbDevice
                 0x01, 0x03FF, (short)Interface, 64);
 
             bool ok = device.ControlTransfer(ref setupGet, Response, 64, out int transferred);
-            if (!ok || transferred < 14) return false;
+            if (!ok || transferred < 15) return false;
 
             millivolts = (Response[12] << 8) | Response[13];
+            percent    = Response[14];
+            isCharging = Response[9] == 0x05;
 
             if (!_initialized)
             {
