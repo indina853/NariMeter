@@ -113,33 +113,25 @@ public sealed class TrayApp : ApplicationContext
     private void UpdateTray(HeadsetState state)
     {
         _tray.Icon = ResolveIcon(state);
-        _tray.Text = ResolveTooltip(state);
+        _tray.Text = state.TooltipLine;
     }
 
     private Icon ResolveIcon(HeadsetState state)
     {
         if (state.IsInactive) return _iconHeadphone;
 
-        if (state.Status is ChargeStatus.Charging or ChargeStatus.FullyCharged)
-            return _iconCharging;
-
-        return state.BatteryPercent switch
+        return state.Status switch
         {
-            > 50 => _iconGreen,
-            > 20 => _iconYellow,
-            _    => _iconRed
+            ChargeStatus.FullyCharged => _iconGreen,
+            ChargeStatus.Charging     => _iconCharging,
+            _ => state.BatteryPercent switch
+            {
+                > 50 => _iconGreen,
+                > 20 => _iconYellow,
+                _    => _iconRed
+            }
         };
     }
-
-    private static string ResolveTooltip(HeadsetState state) =>
-        state.Status switch
-        {
-            ChargeStatus.Disconnected => "Disconnected",
-            ChargeStatus.PoweredOff   => "Powered Off",
-            ChargeStatus.FullyCharged => "100% Fully Charged",
-            ChargeStatus.Charging     => $"{state.BatteryPercent}% Charging",
-            _                         => $"{state.BatteryPercent}%"
-        };
 
     private static Icon LoadIcon(string name)
     {
