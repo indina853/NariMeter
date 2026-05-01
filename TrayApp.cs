@@ -138,7 +138,6 @@ public sealed class TrayApp : ApplicationContext
             _cachedPercent      = state.BatteryPercent;
             _cachedStatus       = state.Status;
             _lastSuccessfulRead = DateTime.UtcNow;
-            StateStore.SavePercent(_cachedPercent);
         }
 
         var previous = _lastState;
@@ -152,7 +151,7 @@ public sealed class TrayApp : ApplicationContext
         if (!_notificationsEnabled) return;
 
         if (current.Status == ChargeStatus.FullyCharged &&
-            previous.Status == ChargeStatus.Charging    &&
+            previous.Status == ChargeStatus.Charging &&
             !_notifiedCharged)
         {
             _notifiedCharged = true;
@@ -251,7 +250,7 @@ public sealed class TrayApp : ApplicationContext
         startup.Click += (_, _) =>
         {
             if (startup.Checked) StartupManager.Enable();
-            else                 StartupManager.Disable();
+            else StartupManager.Disable();
         };
 
         var warnMenu = new ToolStripMenuItem("Warn Threshold");
@@ -259,7 +258,7 @@ public sealed class TrayApp : ApplicationContext
 
         foreach (var pct in new[] { 10, 15, 20, 25, 30 })
         {
-            var p    = pct;
+            var p = pct;
             var item = new ToolStripMenuItem($"{p}%") { Tag = p };
             item.Click += (_, _) =>
             {
@@ -279,7 +278,7 @@ public sealed class TrayApp : ApplicationContext
 
         foreach (var pct in new[] { 5, 10, 15 })
         {
-            var p    = pct;
+            var p = pct;
             var item = new ToolStripMenuItem($"{p}%") { Tag = p };
             item.Click += (_, _) =>
             {
