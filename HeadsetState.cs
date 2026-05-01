@@ -14,6 +14,9 @@ public record HeadsetState(int BatteryPercent, ChargeStatus Status)
     public static HeadsetState Disconnected { get; } = new(0, ChargeStatus.Disconnected);
     public static HeadsetState PoweredOff   { get; } = new(0, ChargeStatus.PoweredOff);
 
+    public static HeadsetState FromCache(int percent, ChargeStatus status) =>
+        new(percent, status);
+
     public string TooltipLine =>
         Status switch
         {
