@@ -19,7 +19,7 @@ Synapse installs a constellation of background services — `RazerNahimic`, `Raz
 
 The interface itself buries the battery indicator under multiple clicks inside a large, slow-loading overlay. For a single piece of information — *how much battery does my headset have?* — the friction is remarkable.
 
-NariMeter answers that question with a glanceable tray icon, ~50 MB of RAM (the unavoidable cost of the .NET 8 runtime), and no network activity whatsoever.
+NariMeter answers that question with a glanceable tray icon, ~25 MB on disk, and no network activity whatsoever.
 
 ---
 
@@ -31,6 +31,8 @@ NariMeter answers that question with a glanceable tray icon, ~50 MB of RAM (the 
 - Fully charged indicator when the cable is connected and battery is at 100%
 - Headphone icon when the headset is powered off or disconnected
 - Hover tooltip with current status
+- **Low battery notifications** — configurable warn and critical thresholds
+- **Fully charged notification** — alerts when the headset reaches 100%
 - **Run at Startup** toggle in the right-click menu (via Windows registry, no installer required)
 - Fully portable — single `.exe`, no installation, no registry pollution beyond the optional startup entry
 
@@ -52,17 +54,21 @@ NariMeter answers that question with a glanceable tray icon, ~50 MB of RAM (the 
 ## Requirements
 
 - Windows 10 or later (x64)
+- [.NET 8 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime) — required, free, one-click install
 - Razer Nari wireless headset with USB dongle connected
 - WinUSB driver installed on Interface 5 of the dongle (see setup below)
-- No .NET installation required — the runtime is bundled inside the executable (self-contained)
 
-> **For developers building from source:** [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) is required.
+> **For developers building from source:** [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) is required instead of the runtime.
 
 ---
 
 ## Setup
 
-### 1. Install the WinUSB driver
+### 1. Install the .NET 8 Runtime
+
+Download and run the installer from [dotnet.microsoft.com](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime). Many users will already have this installed.
+
+### 2. Install the WinUSB driver
 
 NariMeter communicates with the Nari dongle at the USB protocol level, bypassing Razer's driver stack entirely. For this to work, the WinUSB generic driver must be bound to **Interface 5** of the dongle.
 
@@ -74,7 +80,7 @@ NariMeter communicates with the Nari dongle at the USB protocol level, bypassing
 
 > This does not affect the headset's audio functionality. Only the HID interface used for battery reporting is replaced. Razer Synapse will lose the ability to communicate with the dongle on this interface, which is entirely the point.
 
-### 2. Run NariMeter
+### 3. Run NariMeter
 
 Download `NariMeter.exe` from the [Releases](../../releases) page and run it. No installation required. The tray icon will appear within a few seconds of the dongle being recognized.
 
@@ -139,34 +145,26 @@ Within the response buffer, the relevant fields are:
 | `[9]` | `0x05` | USB cable connected (charging) |
 | `[9]` | `0x03` | USB cable disconnected (discharging) |
 | `[12:13]` | uint16 big-endian | Battery voltage in millivolts |
-| `[14]` | uint8 | Battery percentage (0–100, device-reported) |
-
-The headset is considered **powered on** when `response[1]` is not `0x01` or `response[2]` is not `0x00`. When powered off or sleeping, the dongle continues to respond to the control transfer but reports the idle state bytes.
-
-The charging state is determined directly from `response[9]`: a value of `0x05` indicates the USB cable is connected. The battery percentage is read directly from `response[14]` as a native integer — no voltage conversion required.
+| `[14]` | uint8 | Battery percentage (0–100, device-reported, used as sanity check) |
 
 ### Step 4 — Charge state detection
 
-The device reports charge state and battery percentage natively, eliminating the need for voltage-based estimation:
+The device reports charge state natively via `response[9]`:
 
 ```csharp
 isCharging = response[9] == 0x05;
-percent    = response[14];
 ```
 
-When `isCharging` is true and `percent >= 100`, the status is reported as **Fully Charged**. When `isCharging` is true and `percent < 100`, the status is **Charging**. Otherwise the status is **Discharging**.
+The battery percentage from `response[14]` is used as a lightweight sanity check against the voltage-derived percentage to filter out anomalous readings.
 
 ### Step 5 — State machine and debouncing
 
-Raw USB readings are noisy, particularly at startup when the host controller and device are still negotiating. A naive implementation that reacts to every reading will flicker between states.
-
-NariMeter implements independent debounce thresholds in `UsbDevice.cs`:
+Raw USB readings are noisy, particularly at startup when the host controller and device are still negotiating. NariMeter implements independent debounce thresholds in `UsbDevice.cs`:
 
 - **Powered on** is only confirmed after **4 consecutive active readings** (4 × 2s = 8 seconds)
 - **Powered off** is confirmed after **4 consecutive idle readings**
-- This prevents transient USB responses at boot from triggering a false active state
 
-Battery level is polled separately from connection state — every **30 seconds** when active, which is sufficient given the slow rate of battery discharge and eliminates unnecessary USB traffic.
+Battery level is polled every **30 seconds** when active, which is sufficient given the slow rate of battery discharge.
 
 ### Step 6 — Architecture overview
 
@@ -180,7 +178,17 @@ Program.cs
     └── StartupManager.cs — Windows registry autostart toggle (HKCU\...\Run)
 ```
 
-All tray icons are embedded directly in the executable as `EmbeddedResource` — no external files required at runtime.
+---
+
+## Notifications
+
+NariMeter supports optional Windows balloon notifications, toggled via the right-click menu under **Show Notifications**:
+
+- **Low Battery Warning** — triggered at a configurable threshold (default: 20%)
+- **Battery Critical** — triggered at a configurable threshold (default: 10%)
+- **Fully Charged** — triggered when the headset reaches 100% while on cable
+
+Warn and critical thresholds are configurable independently via the right-click menu and persist across sessions.
 
 ---
 
@@ -194,7 +202,7 @@ cd NariMeter
 dotnet build
 ```
 
-**Publishing a self-contained portable executable:**
+**Publishing a portable executable:**
 
 ```bash
 dotnet publish -c Release
@@ -202,7 +210,7 @@ dotnet publish -c Release
 
 Output: `bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\NariMeter.exe`
 
-The published executable is fully self-contained — it includes the .NET 8 runtime and requires no framework installation on the target machine.
+> The published executable requires the [.NET 8 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime) on the target machine.
 
 ---
 
@@ -210,14 +218,13 @@ The published executable is fully self-contained — it includes the .NET 8 runt
 
 | Metric | Value |
 |---|---|
-| RAM usage (steady state) | ~50 MB |
+| Executable size | ~25 MB |
+| RAM usage (steady state) | ~15 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
-| Disk writes | Only on battery % change (state persistence) |
+| Disk writes | Only on battery % change and settings updates |
 | Poll interval — state | 2 seconds |
 | Poll interval — battery | 30 seconds |
-
-The RAM footprint reflects the cost of the self-contained .NET 8 runtime. The application logic itself is minimal — two timers, five icons loaded once at startup, and a static USB read buffer.
 
 ---
 
@@ -229,8 +236,8 @@ NariMeter/
 ├── HeadsetState.cs        — State record and charge status definitions
 ├── Program.cs             — Entry point
 ├── StartupManager.cs      — Run at startup via Windows registry
-├── StateStore.cs          — Last known battery % persistence (JSON)
-├── TrayApp.cs             — Tray icon, timers, menu
+├── StateStore.cs          — Battery % and settings persistence (JSON)
+├── TrayApp.cs             — Tray icon, timers, notifications, menu
 ├── UsbDevice.cs           — USB HID communication layer
 ├── App.ico                — Application icon (task manager, Explorer)
 ├── Headphone.ico          — Tray: powered off / disconnected state
