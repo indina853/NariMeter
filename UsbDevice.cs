@@ -59,7 +59,7 @@ public static class UsbDevice
 
             millivolts = (Response[12] << 8) | Response[13];
             percent    = Response[14];
-            isCharging = Response[9] == 0x05;
+            isCharging = Response[9] == 0x05 || Response[9] == 0x06;
 
             if (!_initialized)
             {
