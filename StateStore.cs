@@ -9,6 +9,9 @@ public static class StateStore
     private static readonly string FilePath =
         Path.Combine(AppContext.BaseDirectory, "NariMeter.state.json");
 
+    private static readonly string TempPath =
+        Path.Combine(AppContext.BaseDirectory, "NariMeter.state.tmp");
+
     private const int DefaultLowBatteryWarn = 20;
     private const int DefaultLowBatteryCrit = 10;
 
@@ -19,33 +22,55 @@ public static class StateStore
         int  LowBatteryWarn,
         int  LowBatteryCrit);
 
-    public static int  LoadLastPercent()          => Load().LastValidPercent;
-    public static bool LoadNotificationsEnabled() => Load().NotificationsEnabled;
-    public static int  LoadLowBatteryWarn()       => Load().LowBatteryWarn;
-    public static int  LoadLowBatteryCrit()       => Load().LowBatteryCrit;
+    private static PersistedState? _cache;
+
+    public static int  LoadLastPercent()          => Get().LastValidPercent;
+    public static bool LoadNotificationsEnabled() => Get().NotificationsEnabled;
+    public static int  LoadLowBatteryWarn()       => Get().LowBatteryWarn;
+    public static int  LoadLowBatteryCrit()       => Get().LowBatteryCrit;
 
     public static void SavePercent(int percent)
     {
-        Save(Load() with { LastValidPercent = percent, LastValidMv = 0 });
+        Mutate(s => s with { LastValidPercent = percent, LastValidMv = 0 });
     }
 
     public static void SaveNotificationsEnabled(bool enabled)
     {
-        Save(Load() with { NotificationsEnabled = enabled });
+        Mutate(s => s with { NotificationsEnabled = enabled });
     }
 
     public static void SaveLowBatteryWarn(int threshold)
     {
-        Save(Load() with { LowBatteryWarn = threshold });
+        Mutate(s => s with { LowBatteryWarn = threshold });
     }
 
     public static void SaveLowBatteryCrit(int threshold)
     {
-        Save(Load() with { LowBatteryCrit = threshold });
+        Mutate(s => s with { LowBatteryCrit = threshold });
     }
 
-    private static void Save(PersistedState state) =>
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(state));
+    private static PersistedState Get()
+    {
+        if (_cache is not null) return _cache;
+        _cache = Load();
+        return _cache;
+    }
+
+    private static void Mutate(Func<PersistedState, PersistedState> transform)
+    {
+        _cache = transform(Get());
+        Persist(_cache);
+    }
+
+    private static void Persist(PersistedState state)
+    {
+        try
+        {
+            File.WriteAllText(TempPath, JsonSerializer.Serialize(state));
+            File.Move(TempPath, FilePath, overwrite: true);
+        }
+        catch { }
+    }
 
     private static PersistedState Load()
     {
@@ -59,5 +84,5 @@ public static class StateStore
     }
 
     private static PersistedState Default() =>
-        new(50, 0, false, DefaultLowBatteryWarn, DefaultLowBatteryCrit);
+        new(0, 0, false, DefaultLowBatteryWarn, DefaultLowBatteryCrit);
 }
