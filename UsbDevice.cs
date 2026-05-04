@@ -1,4 +1,3 @@
-using System;
 using LibUsbDotNet;
 using LibUsbDotNet.Main;
 
@@ -6,11 +5,12 @@ namespace NariMeter;
 
 public static class UsbDevice
 {
-    private const int VendorId        = 0x1532;
-    private const int ProductId       = 0x051C;
-    private const int Interface       = 5;
-    private const int IdleThreshold   = 4;
-    private const int ActiveThreshold = 4;
+    public  const string DeviceName      = "Razer Nari";
+    private const int    VendorId        = 0x1532;
+    private const int    ProductId       = 0x051C;
+    private const int    Interface       = 5;
+    private const int    IdleThreshold   = 4;
+    private const int    ActiveThreshold = 4;
 
     private static readonly byte[] SetData = new byte[64]
     {
@@ -40,7 +40,7 @@ public static class UsbDevice
         {
             var finder = new UsbDeviceFinder(VendorId, ProductId);
             device = LibUsbDotNet.UsbDevice.OpenUsbDevice(finder);
-            if (device == null) { Reset(); return false; }
+            if (device == null) return false;
 
             if (device is IUsbDevice wholeDevice)
                 wholeDevice.ClaimInterface(Interface);
@@ -63,7 +63,7 @@ public static class UsbDevice
 
             if (!_initialized)
             {
-                if (millivolts == 0) return false;
+                if (millivolts == 0 && !isCharging) return false;
                 _initialized = true;
             }
 
@@ -72,15 +72,13 @@ public static class UsbDevice
             if (isIdle)
             {
                 _activeCount = 0;
-                _idleCount++;
-                if (_idleCount >= IdleThreshold)
+                if (++_idleCount >= IdleThreshold)
                     _poweredOn = false;
             }
             else
             {
                 _idleCount = 0;
-                _activeCount++;
-                if (_activeCount >= ActiveThreshold)
+                if (++_activeCount >= ActiveThreshold)
                     _poweredOn = true;
             }
 
@@ -100,7 +98,7 @@ public static class UsbDevice
         }
     }
 
-    private static void Reset()
+    public static void Reset()
     {
         _idleCount   = 0;
         _activeCount = 0;
