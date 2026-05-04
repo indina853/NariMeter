@@ -63,6 +63,51 @@ public sealed class BatteryReader
             _stabilizing = false;
         }
 
+        if (isCharging)
+            return HandleCharging(mv, percentRaw);
+
+        return HandleDischarging(mv, percentRaw);
+    }
+
+    private HeadsetState HandleCharging(int mv, int percentRaw)
+    {
+        if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
+            TryCalibrate(mv, percentRaw);
+
+        int target = CalculateChargingPercent(mv);
+
+        if (target >= 100)
+        {
+            _lastValidPercent = 100;
+            _lastChargeStatus = ChargeStatus.FullyCharged;
+            _hasRealReading   = true;
+            SaveIfChanged(100);
+            return new HeadsetState(100, ChargeStatus.FullyCharged);
+        }
+
+        int targetBucket = (Math.Clamp(target, 0, 99) / StepPercent) * StepPercent;
+
+        if (!_hasRealReading)
+        {
+            _lastValidPercent = targetBucket;
+        }
+        else if (targetBucket > _lastValidPercent)
+        {
+            _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
+        }
+        else if (targetBucket < _lastValidPercent)
+        {
+            _lastValidPercent = Math.Max(_lastValidPercent - StepPercent, targetBucket);
+        }
+
+        _lastChargeStatus = ChargeStatus.Charging;
+        _hasRealReading   = true;
+        SaveIfChanged(_lastValidPercent);
+        return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+    }
+
+    private HeadsetState HandleDischarging(int mv, int percentRaw)
+    {
         if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
             TryCalibrate(mv, percentRaw);
 
@@ -70,36 +115,13 @@ public sealed class BatteryReader
             ? (percentRaw / StepPercent) * StepPercent
             : -1;
 
-        int mvCalculated = isCharging
-            ? CalculateChargingPercent(mv)
-            : CalculateDischargingPercent(mv);
+        int mvCalculated = CalculateDischargingPercent(mv);
 
         int target = firmwareBucket >= 0 ? firmwareBucket : mvCalculated;
 
         if (firmwareBucket >= 0 && mv > 0 &&
             Math.Abs(mvCalculated - firmwareBucket) > SanityThreshold)
             target = _hasRealReading ? _lastValidPercent : firmwareBucket;
-
-        if (isCharging)
-        {
-            if (target >= 100)
-            {
-                _lastValidPercent = 100;
-                _lastChargeStatus = ChargeStatus.FullyCharged;
-                _hasRealReading   = true;
-                SaveIfChanged(100);
-                return new HeadsetState(100, ChargeStatus.FullyCharged);
-            }
-
-            if (_hasRealReading && target < _lastValidPercent)
-                target = _lastValidPercent;
-
-            _lastValidPercent = (Math.Clamp(target, 0, 99) / StepPercent) * StepPercent;
-            _lastChargeStatus = ChargeStatus.Charging;
-            _hasRealReading   = true;
-            SaveIfChanged(_lastValidPercent);
-            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
-        }
 
         if (!_hasRealReading)
         {
