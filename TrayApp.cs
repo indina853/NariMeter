@@ -8,35 +8,34 @@ public sealed class TrayApp : ApplicationContext
 {
     private const int StateIntervalMs        = 2000;
     private const int BatteryIntervalMs      = 30000;
+    private const int BatteryFastIntervalMs  = 3000;
     private const int DisconnectedIntervalMs = 500;
     private const int ActiveThreshold        = 4;
 
     private static readonly TimeSpan StalenessThreshold = TimeSpan.FromMinutes(10);
 
-    private readonly NotifyIcon    _tray;
+    private readonly NotifyIcon _tray;
     private readonly BatteryReader _reader;
     private readonly System.Windows.Forms.Timer _stateTimer;
     private readonly System.Windows.Forms.Timer _batteryTimer;
-
     private readonly Icon _iconHeadphone;
     private readonly Icon _iconGreen;
     private readonly Icon _iconYellow;
     private readonly Icon _iconRed;
     private readonly Icon _iconCharging;
 
-    private HeadsetState _lastState          = HeadsetState.Disconnected;
-    private bool         _initialized        = false;
-    private int          _activeConfirm      = 0;
-    private bool         _notifiedWarn       = false;
-    private bool         _notifiedCrit       = false;
-    private bool         _notifiedCharged    = false;
+    private HeadsetState _lastState = HeadsetState.Disconnected;
+    private bool         _initialized = false;
+    private int          _activeConfirm = 0;
+    private bool         _notifiedWarn = false;
+    private bool         _notifiedCrit = false;
+    private bool         _notifiedCharged = false;
     private bool         _notificationsEnabled;
-    private int          _cachedPercent      = 50;
-    private ChargeStatus _cachedStatus       = ChargeStatus.Discharging;
+    private int          _cachedPercent = 0;
+    private ChargeStatus _cachedStatus  = ChargeStatus.Discharging;
     private DateTime     _lastSuccessfulRead = DateTime.UtcNow;
     private int          _lowBatteryWarn;
     private int          _lowBatteryCrit;
-
     private ToolStripMenuItem _notifyToggle = null!;
 
     public TrayApp()
@@ -66,7 +65,10 @@ public sealed class TrayApp : ApplicationContext
         _stateTimer.Tick += OnStateTick;
         _stateTimer.Start();
 
-        _batteryTimer = new System.Windows.Forms.Timer { Interval = BatteryIntervalMs };
+        _batteryTimer = new System.Windows.Forms.Timer
+        {
+            Interval = _reader.NeedsFirstReading ? BatteryFastIntervalMs : BatteryIntervalMs
+        };
         _batteryTimer.Tick += OnBatteryTick;
         _batteryTimer.Start();
     }
@@ -93,7 +95,8 @@ public sealed class TrayApp : ApplicationContext
 
             if (_lastState.IsInactive)
             {
-                _lastState           = state;
+                _activeConfirm = 0;
+                _lastState     = state;
                 _stateTimer.Interval = StateIntervalMs;
                 UpdateTray(state);
             }
@@ -104,7 +107,7 @@ public sealed class TrayApp : ApplicationContext
 
             if (!_lastState.IsInactive || _lastState.Status != state.Status)
             {
-                _lastState           = state;
+                _lastState = state;
                 _stateTimer.Interval = DisconnectedIntervalMs;
                 ResetNotificationFlags();
                 UpdateTray(state);
@@ -117,13 +120,15 @@ public sealed class TrayApp : ApplicationContext
         if (DateTime.UtcNow - _lastSuccessfulRead > StalenessThreshold)
         {
             _lastSuccessfulRead = DateTime.UtcNow;
-            OnBatteryTick(null, EventArgs.Empty);
             return;
         }
 
         if (_lastState.IsInactive) return;
 
         var state = _reader.PollBattery();
+
+        if (!_reader.NeedsFirstReading && _batteryTimer.Interval == BatteryFastIntervalMs)
+            _batteryTimer.Interval = BatteryIntervalMs;
 
         if (state.BatteryPercent == 0 && !_lastState.IsInactive)
         {
@@ -148,6 +153,12 @@ public sealed class TrayApp : ApplicationContext
 
     private void CheckNotifications(HeadsetState previous, HeadsetState current)
     {
+        if (previous.Status == ChargeStatus.Charging &&
+            current.Status  == ChargeStatus.Discharging)
+        {
+            _reader.NotifyCableRemoved();
+        }
+
         if (!_notificationsEnabled) return;
 
         if (current.Status == ChargeStatus.FullyCharged &&
@@ -236,6 +247,7 @@ public sealed class TrayApp : ApplicationContext
             Checked      = _notificationsEnabled,
             CheckOnClick = true
         };
+
         _notifyToggle.Click += (_, _) =>
         {
             _notificationsEnabled = _notifyToggle.Checked;
@@ -247,6 +259,7 @@ public sealed class TrayApp : ApplicationContext
             Checked      = StartupManager.IsEnabled(),
             CheckOnClick = true
         };
+
         startup.Click += (_, _) =>
         {
             if (startup.Checked) StartupManager.Enable();
@@ -258,7 +271,7 @@ public sealed class TrayApp : ApplicationContext
 
         foreach (var pct in new[] { 10, 15, 20, 25, 30 })
         {
-            var p = pct;
+            var p    = pct;
             var item = new ToolStripMenuItem($"{p}%") { Tag = p };
             item.Click += (_, _) =>
             {
@@ -278,7 +291,7 @@ public sealed class TrayApp : ApplicationContext
 
         foreach (var pct in new[] { 5, 10, 15 })
         {
-            var p = pct;
+            var p    = pct;
             var item = new ToolStripMenuItem($"{p}%") { Tag = p };
             item.Click += (_, _) =>
             {
@@ -310,6 +323,7 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Add(critMenu);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exit);
+
         return menu;
     }
 
