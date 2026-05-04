@@ -22,6 +22,8 @@ public sealed class BatteryReader
     private int  _confirmCandidate;
     private bool _stabilizing;
     private bool _hasRealReading;
+    private bool _wasCharging;
+    private bool _chargingJustStarted;
     private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
 
     private int _minMv;
@@ -63,6 +65,11 @@ public sealed class BatteryReader
             _stabilizing = false;
         }
 
+        if (isCharging && !_wasCharging)
+            _chargingJustStarted = true;
+
+        _wasCharging = isCharging;
+
         if (isCharging)
             return HandleCharging(mv, percentRaw);
 
@@ -73,6 +80,15 @@ public sealed class BatteryReader
     {
         if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
             TryCalibrate(mv, percentRaw);
+
+        if (_chargingJustStarted)
+        {
+            _chargingJustStarted = false;
+            _lastChargeStatus    = ChargeStatus.Charging;
+            _hasRealReading      = true;
+            SaveIfChanged(_lastValidPercent);
+            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+        }
 
         int target = CalculateChargingPercent(mv);
 
