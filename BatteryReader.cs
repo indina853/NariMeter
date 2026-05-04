@@ -6,6 +6,14 @@ public sealed class BatteryReader
 {
     private const int StabilizationTicks = 3;
     private const int ConfirmTicks       = 2;
+    private const int StepPercent        = 5;
+
+    private const int DefaultMinMv        = 3296;
+    private const int DefaultMaxMv        = 4128;
+    private const int ChargingThresholdMv = 4160;
+    private const int CalibrationLowPct   = 5;
+    private const int CalibrationHighPct  = 95;
+    private const int SanityThreshold     = 40;
 
     private int  _lastValidPercent;
     private int  _lastSavedPercent = -1;
@@ -16,6 +24,9 @@ public sealed class BatteryReader
     private bool _hasRealReading;
     private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
 
+    private int _minMv;
+    private int _maxMv;
+
     public bool NeedsFirstReading => !_hasRealReading;
 
     public BatteryReader()
@@ -23,6 +34,8 @@ public sealed class BatteryReader
         _lastValidPercent = StateStore.LoadLastPercent();
         _lastSavedPercent = _lastValidPercent;
         _hasRealReading   = _lastValidPercent > 0;
+        _minMv            = StateStore.LoadMinMv();
+        _maxMv            = StateStore.LoadMaxMv();
     }
 
     public HeadsetState PollState()
@@ -37,7 +50,7 @@ public sealed class BatteryReader
 
     public HeadsetState PollBattery()
     {
-        if (!UsbDevice.TryRead(out _, out bool poweredOn, out bool isCharging, out int percentRaw))
+        if (!UsbDevice.TryRead(out int mv, out bool poweredOn, out bool isCharging, out int percentRaw))
             return HeadsetState.Disconnected;
 
         if (!poweredOn) return HeadsetState.PoweredOff;
@@ -50,13 +63,26 @@ public sealed class BatteryReader
             _stabilizing = false;
         }
 
-        int percent = (percentRaw > 0 && percentRaw <= 100)
-            ? percentRaw
-            : _lastValidPercent;
+        if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
+            TryCalibrate(mv, percentRaw);
+
+        int firmwareBucket = (percentRaw > 0 && percentRaw <= 100)
+            ? (percentRaw / StepPercent) * StepPercent
+            : -1;
+
+        int mvCalculated = isCharging
+            ? CalculateChargingPercent(mv)
+            : CalculateDischargingPercent(mv);
+
+        int target = firmwareBucket >= 0 ? firmwareBucket : mvCalculated;
+
+        if (firmwareBucket >= 0 && mv > 0 &&
+            Math.Abs(mvCalculated - firmwareBucket) > SanityThreshold)
+            target = _hasRealReading ? _lastValidPercent : firmwareBucket;
 
         if (isCharging)
         {
-            if (percent >= 100)
+            if (target >= 100)
             {
                 _lastValidPercent = 100;
                 _lastChargeStatus = ChargeStatus.FullyCharged;
@@ -65,10 +91,10 @@ public sealed class BatteryReader
                 return new HeadsetState(100, ChargeStatus.FullyCharged);
             }
 
-            if (_hasRealReading && percent < _lastValidPercent)
-                percent = _lastValidPercent;
+            if (_hasRealReading && target < _lastValidPercent)
+                target = _lastValidPercent;
 
-            _lastValidPercent = (Math.Clamp(percent, 0, 99) / 5) * 5;
+            _lastValidPercent = (Math.Clamp(target, 0, 99) / StepPercent) * StepPercent;
             _lastChargeStatus = ChargeStatus.Charging;
             _hasRealReading   = true;
             SaveIfChanged(_lastValidPercent);
@@ -77,8 +103,8 @@ public sealed class BatteryReader
 
         if (!_hasRealReading)
         {
-            int bucket = (percent / 5) * 5;
-            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > 5)
+            int bucket = (target / StepPercent) * StepPercent;
+            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
             {
                 _confirmCandidate = bucket;
                 _confirmCounter   = 1;
@@ -96,8 +122,12 @@ public sealed class BatteryReader
         }
         else
         {
-            int smooth        = (int)Math.Round(_lastValidPercent * 0.4 + percent * 0.6);
-            _lastValidPercent = (Math.Clamp(smooth, 0, 100) / 5) * 5;
+            int targetBucket = (Math.Clamp(target, 0, 100) / StepPercent) * StepPercent;
+
+            if (targetBucket < _lastValidPercent)
+                _lastValidPercent = Math.Max(_lastValidPercent - StepPercent, targetBucket);
+            else if (targetBucket > _lastValidPercent)
+                _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
         }
 
         _lastChargeStatus = ChargeStatus.Discharging;
@@ -111,6 +141,38 @@ public sealed class BatteryReader
         _stabilizing          = true;
         _stabilizationCounter = 0;
         _lastChargeStatus     = ChargeStatus.Discharging;
+    }
+
+    private void TryCalibrate(int mv, int pct)
+    {
+        if (pct <= CalibrationLowPct && mv < _minMv)
+        {
+            _minMv = mv;
+            StateStore.SaveMinMv(_minMv);
+        }
+
+        if (pct >= CalibrationHighPct && mv > _maxMv)
+        {
+            _maxMv = mv;
+            StateStore.SaveMaxMv(_maxMv);
+        }
+    }
+
+    private int CalculateDischargingPercent(int mv)
+    {
+        if (mv <= 0) return _lastValidPercent;
+        mv = Math.Clamp(mv, _minMv, _maxMv);
+        double t = (double)(mv - _minMv) / (_maxMv - _minMv);
+        return (int)Math.Round(t * 100);
+    }
+
+    private int CalculateChargingPercent(int mv)
+    {
+        if (mv <= 0) return _lastValidPercent;
+        if (mv >= ChargingThresholdMv) return 100;
+        mv = Math.Clamp(mv, _minMv, ChargingThresholdMv);
+        double t = (double)(mv - _minMv) / (ChargingThresholdMv - _minMv);
+        return (int)Math.Round(t * 100);
     }
 
     private void SaveIfChanged(int percent)
