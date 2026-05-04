@@ -81,11 +81,42 @@ public sealed class BatteryReader
         if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
             TryCalibrate(mv, percentRaw);
 
+        if (!_hasRealReading)
+        {
+            _chargingJustStarted = false;
+
+            int bucket = (percentRaw > 0 && percentRaw <= 100)
+                ? (percentRaw / StepPercent) * StepPercent
+                : -1;
+
+            if (bucket < 0)
+                return new HeadsetState(0, ChargeStatus.Charging);
+
+            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
+            {
+                _confirmCandidate = bucket;
+                _confirmCounter   = 1;
+            }
+            else
+            {
+                _confirmCounter++;
+            }
+
+            if (_confirmCounter < ConfirmTicks)
+                return new HeadsetState(0, ChargeStatus.Charging);
+
+            _lastValidPercent    = _confirmCandidate;
+            _confirmCounter      = 0;
+            _hasRealReading      = true;
+            _lastChargeStatus    = ChargeStatus.Charging;
+            SaveIfChanged(_lastValidPercent);
+            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+        }
+
         if (_chargingJustStarted)
         {
             _chargingJustStarted = false;
             _lastChargeStatus    = ChargeStatus.Charging;
-            _hasRealReading      = true;
             SaveIfChanged(_lastValidPercent);
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
@@ -103,21 +134,12 @@ public sealed class BatteryReader
 
         int targetBucket = (Math.Clamp(target, 0, 99) / StepPercent) * StepPercent;
 
-        if (!_hasRealReading)
-        {
-            _lastValidPercent = targetBucket;
-        }
-        else if (targetBucket > _lastValidPercent)
-        {
+        if (targetBucket > _lastValidPercent)
             _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
-        }
         else if (targetBucket < _lastValidPercent)
-        {
             _lastValidPercent = Math.Max(_lastValidPercent - StepPercent, targetBucket);
-        }
 
         _lastChargeStatus = ChargeStatus.Charging;
-        _hasRealReading   = true;
         SaveIfChanged(_lastValidPercent);
         return new HeadsetState(_lastValidPercent, _lastChargeStatus);
     }
