@@ -4,23 +4,26 @@ namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int StabilizationTicks  = 3;
-    private const int ConfirmTicks        = 2;
-    private const int StepPercent         = 5;
-    private const int MaxStepPerMinute    = 5;
-    private const int SanityThreshold     = 40;
+    private const int StabilizationTicks   = 3;
+    private const int ConfirmTicks         = 2;
+    private const int ChargingConfirmTicks = 4;
+    private const int StepPercent          = 5;
+    private const int MaxStepPerMinute     = 5;
+    private const int SanityThreshold      = 40;
 
-    private const int DefaultMinMv        = 3296;
-    private const int DefaultMaxMv        = 4128;
-    private const int ChargingThresholdMv = 4160;
-    private const int CalibrationLowPct   = 5;
-    private const int CalibrationHighPct  = 95;
+    private const int DefaultMinMv         = 3296;
+    private const int DefaultMaxMv         = 4128;
+    private const int ChargingThresholdMv  = 4160;
+    private const int CalibrationLowPct    = 5;
+    private const int CalibrationHighPct   = 95;
 
     private int  _lastValidPercent;
-    private int  _lastSavedPercent  = -1;
+    private int  _lastSavedPercent   = -1;
     private int  _stabilizationCounter;
     private int  _confirmCounter;
     private int  _confirmCandidate;
+    private int  _chargingConfirmCounter;
+    private int  _chargingConfirmCandidate;
     private bool _stabilizing;
     private bool _hasRealReading;
     private bool _wasCharging;
@@ -68,7 +71,11 @@ public sealed class BatteryReader
         }
 
         if (isCharging && !_wasCharging)
-            _chargingJustStarted = true;
+        {
+            _chargingJustStarted       = true;
+            _chargingConfirmCounter    = 0;
+            _chargingConfirmCandidate  = -1;
+        }
 
         _wasCharging = isCharging;
 
@@ -87,9 +94,11 @@ public sealed class BatteryReader
 
         if (mv >= ChargingThresholdMv)
         {
-            _lastValidPercent = 100;
-            _lastChargeStatus = ChargeStatus.FullyCharged;
-            _hasRealReading   = true;
+            _lastValidPercent          = 100;
+            _lastChargeStatus          = ChargeStatus.FullyCharged;
+            _hasRealReading            = true;
+            _chargingConfirmCounter    = 0;
+            _chargingConfirmCandidate  = -1;
             SaveIfChanged(100);
             return new HeadsetState(100, ChargeStatus.FullyCharged);
         }
@@ -134,15 +143,33 @@ public sealed class BatteryReader
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
 
-        bool mvValid = mv > 0 && mv < _maxMv;
+        int firmwareBucket = (percentRaw > 0 && percentRaw <= 100)
+            ? (percentRaw / StepPercent) * StepPercent
+            : -1;
 
-        if (mvValid)
+        if (firmwareBucket > _lastValidPercent)
         {
-            int mvCalculated = CalculateChargingPercent(mv);
-            int targetBucket = MvToBucket(mvCalculated, 99);
+            if (firmwareBucket != _chargingConfirmCandidate)
+            {
+                _chargingConfirmCandidate = firmwareBucket;
+                _chargingConfirmCounter   = 1;
+            }
+            else
+            {
+                _chargingConfirmCounter++;
+            }
 
-            if (targetBucket > _lastValidPercent)
-                _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
+            if (_chargingConfirmCounter >= ChargingConfirmTicks)
+            {
+                _lastValidPercent         = Math.Min(_lastValidPercent + StepPercent, _chargingConfirmCandidate);
+                _chargingConfirmCounter   = 0;
+                _chargingConfirmCandidate = -1;
+            }
+        }
+        else
+        {
+            _chargingConfirmCounter   = 0;
+            _chargingConfirmCandidate = -1;
         }
 
         _lastChargeStatus = ChargeStatus.Charging;
@@ -240,14 +267,6 @@ public sealed class BatteryReader
     }
 
     private int CalculateDischargingPercent(int mv)
-    {
-        if (mv <= 0) return _lastValidPercent;
-        mv = Math.Clamp(mv, _minMv, _maxMv);
-        double t = (double)(mv - _minMv) / (_maxMv - _minMv);
-        return (int)Math.Round(t * 100);
-    }
-
-    private int CalculateChargingPercent(int mv)
     {
         if (mv <= 0) return _lastValidPercent;
         mv = Math.Clamp(mv, _minMv, _maxMv);
