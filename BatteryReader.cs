@@ -4,17 +4,17 @@ namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int StabilizationTicks    = 3;
-    private const int ConfirmTicks          = 2;
-    private const int StepPercent           = 5;
-    private const int MaxStepPerMinute      = 5;
+    private const int StabilizationTicks  = 3;
+    private const int ConfirmTicks        = 2;
+    private const int StepPercent         = 5;
+    private const int MaxStepPerMinute    = 5;
+    private const int SanityThreshold     = 40;
 
-    private const int DefaultMinMv          = 3296;
-    private const int DefaultMaxMv          = 4128;
-    private const int ChargingThresholdMv   = 4160;
-    private const int CalibrationLowPct     = 5;
-    private const int CalibrationHighPct    = 95;
-    private const int SanityThreshold       = 40;
+    private const int DefaultMinMv        = 3296;
+    private const int DefaultMaxMv        = 4128;
+    private const int ChargingThresholdMv = 4160;
+    private const int CalibrationLowPct   = 5;
+    private const int CalibrationHighPct  = 95;
 
     private int  _lastValidPercent;
     private int  _lastSavedPercent  = -1;
@@ -25,11 +25,11 @@ public sealed class BatteryReader
     private bool _hasRealReading;
     private bool _wasCharging;
     private bool _chargingJustStarted;
-    private ChargeStatus _lastChargeStatus  = ChargeStatus.Discharging;
+    private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
 
     private int      _minMv;
     private int      _maxMv;
-    private DateTime _lastReadTime          = DateTime.UtcNow;
+    private DateTime _lastReadTime = DateTime.UtcNow;
 
     public bool NeedsFirstReading => !_hasRealReading;
 
@@ -89,16 +89,15 @@ public sealed class BatteryReader
         {
             _chargingJustStarted = false;
 
-            int bucket = (percentRaw > 0 && percentRaw <= 100)
-                ? (percentRaw / StepPercent) * StepPercent
-                : -1;
+            int mvBucket = MvToBucket(CalculateChargingPercent(mv), 99);
+            int candidate = mvBucket >= 0 ? mvBucket : -1;
 
-            if (bucket < 0)
+            if (candidate < 0)
                 return new HeadsetState(0, ChargeStatus.Charging);
 
-            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
+            if (_confirmCounter == 0 || Math.Abs(candidate - _confirmCandidate) > StepPercent)
             {
-                _confirmCandidate = bucket;
+                _confirmCandidate = candidate;
                 _confirmCounter   = 1;
             }
             else
@@ -136,7 +135,14 @@ public sealed class BatteryReader
             return new HeadsetState(100, ChargeStatus.FullyCharged);
         }
 
-        int targetBucket = (Math.Clamp(target, 0, 99) / StepPercent) * StepPercent;
+        int targetBucket = MvToBucket(target, 99);
+
+        if (percentRaw > 0 && percentRaw <= 100)
+        {
+            int firmwareBucket = MvToBucket(percentRaw, 99);
+            if (Math.Abs(firmwareBucket - targetBucket) > SanityThreshold)
+                targetBucket = _lastValidPercent;
+        }
 
         if (targetBucket > _lastValidPercent)
             _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
@@ -153,24 +159,21 @@ public sealed class BatteryReader
         if (mv > 0 && percentRaw > 0 && percentRaw <= 100)
             TryCalibrate(mv, percentRaw);
 
-        int firmwareBucket = (percentRaw > 0 && percentRaw <= 100)
-            ? (percentRaw / StepPercent) * StepPercent
-            : -1;
+        int mvCalculated  = CalculateDischargingPercent(mv);
+        int targetBucket  = MvToBucket(mvCalculated, 100);
 
-        int mvCalculated = CalculateDischargingPercent(mv);
-
-        int target = firmwareBucket >= 0 ? firmwareBucket : mvCalculated;
-
-        if (firmwareBucket >= 0 && mv > 0 &&
-            Math.Abs(mvCalculated - firmwareBucket) > SanityThreshold)
-            target = _hasRealReading ? _lastValidPercent : firmwareBucket;
+        if (percentRaw > 0 && percentRaw <= 100)
+        {
+            int firmwareBucket = MvToBucket(percentRaw, 100);
+            if (Math.Abs(firmwareBucket - targetBucket) > SanityThreshold)
+                targetBucket = _hasRealReading ? MvToBucket(_lastValidPercent, 100) : firmwareBucket;
+        }
 
         if (!_hasRealReading)
         {
-            int bucket = (target / StepPercent) * StepPercent;
-            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
+            if (_confirmCounter == 0 || Math.Abs(targetBucket - _confirmCandidate) > StepPercent)
             {
-                _confirmCandidate = bucket;
+                _confirmCandidate = targetBucket;
                 _confirmCounter   = 1;
             }
             else
@@ -189,15 +192,13 @@ public sealed class BatteryReader
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
 
-        int targetBucket2 = (Math.Clamp(target, 0, 100) / StepPercent) * StepPercent;
-
-        if (targetBucket2 != _lastValidPercent)
+        if (targetBucket != _lastValidPercent)
         {
-            int maxSteps    = ComputeMaxSteps();
-            int stepsNeeded = Math.Abs(targetBucket2 - _lastValidPercent) / StepPercent;
+            int maxSteps     = ComputeMaxSteps();
+            int stepsNeeded  = Math.Abs(targetBucket - _lastValidPercent) / StepPercent;
             int stepsToApply = Math.Min(stepsNeeded, maxSteps);
 
-            if (targetBucket2 < _lastValidPercent)
+            if (targetBucket < _lastValidPercent)
                 _lastValidPercent -= stepsToApply * StepPercent;
             else
                 _lastValidPercent += stepsToApply * StepPercent;
@@ -216,6 +217,9 @@ public sealed class BatteryReader
         double stepsAllowed   = minutesElapsed * MaxStepPerMinute / StepPercent;
         return Math.Max(1, (int)Math.Ceiling(stepsAllowed));
     }
+
+    private static int MvToBucket(int percent, int max) =>
+        (Math.Clamp(percent, 0, max) / StepPercent) * StepPercent;
 
     public void NotifyCableRemoved()
     {
