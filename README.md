@@ -144,10 +144,26 @@ Within the response buffer, the relevant fields are:
 | `[2]` | `0x00` | Confirms idle state |
 | `[9]` | `0x05` | USB cable connected (charging) |
 | `[9]` | `0x03` | USB cable disconnected (discharging) |
-| `[12:13]` | uint16 big-endian | Battery voltage in millivolts |
-| `[14]` | uint8 | Battery percentage (0–100, device-reported, used as sanity check) |
+| `[12:13]` | uint16 big-endian | Battery voltage in millivolts — primary source for percentage calculation |
+| `[14]` | uint8 | Battery percentage reported by device firmware — used as sanity check only |
 
-### Step 4 — Charge state detection
+### Step 4 — Battery percentage calculation
+
+The firmware value at `response[14]` is **not used as the primary battery percentage**. Empirical testing revealed that the Nari firmware updates this value in large discrete jumps — for example, holding at 80% for several hours before dropping directly to 50% on a change of only ~8 mV. This is a firmware calibration limitation, not a reflection of actual charge level.
+
+NariMeter instead derives the battery percentage from the raw millivolt reading at `response[12:13]`, using a linear interpolation between the minimum and maximum observed voltages for the device:
+
+```
+percent = (mv - minMv) / (maxMv - minMv) × 100
+```
+
+The voltage bounds (`minMv`, `maxMv`) are **calibrated adaptively per device** — they start with conservative defaults and are refined automatically as the app observes readings near the low and high extremes during normal use. Calibrated values are persisted across sessions in `NariMeter.state.json`.
+
+The firmware value at `response[14]` is retained as a **sanity check**: if the voltage-derived percentage and the firmware-reported percentage diverge by more than 40 percentage points, the reading is considered anomalous and the last known good value is preserved instead.
+
+Battery percentage is displayed in **steps of 5%** and transitions smoothly — the displayed value moves at most 5% per poll cycle regardless of how large the underlying change is, preventing sudden jumps in the tray icon.
+
+### Step 5 — Charge state detection
 
 The device reports charge state natively via `response[9]`:
 
@@ -155,9 +171,9 @@ The device reports charge state natively via `response[9]`:
 isCharging = response[9] == 0x05;
 ```
 
-The battery percentage from `response[14]` is used as a lightweight sanity check against the voltage-derived percentage to filter out anomalous readings.
+During charging, the millivolt reading rises continuously as the cell charges, providing a reliable and gradual progression toward 100%. The firmware value at `response[14]` is ignored for percentage display during charging for the same reason as discharging — the firmware inflates the value immediately upon cable connection.
 
-### Step 5 — State machine and debouncing
+### Step 6 — State machine and debouncing
 
 Raw USB readings are noisy, particularly at startup when the host controller and device are still negotiating. NariMeter implements independent debounce thresholds in `UsbDevice.cs`:
 
@@ -166,7 +182,7 @@ Raw USB readings are noisy, particularly at startup when the host controller and
 
 Battery level is polled every **30 seconds** when active, which is sufficient given the slow rate of battery discharge.
 
-### Step 6 — Architecture overview
+### Step 7 — Architecture overview
 
 ```
 Program.cs
@@ -174,7 +190,7 @@ Program.cs
     ├── BatteryReader.cs — Charge state logic, stabilization, state persistence
     ├── UsbDevice.cs     — USB HID control transfers, static buffers, debounce state machine
     ├── HeadsetState.cs  — Immutable state record, ChargeStatus enum, tooltip formatting
-    ├── StateStore.cs    — JSON persistence of last known percentage across sessions
+    ├── StateStore.cs    — JSON persistence of last known percentage and calibrated mV bounds
     └── StartupManager.cs — Windows registry autostart toggle (HKCU\...\Run)
 ```
 
