@@ -4,19 +4,20 @@ namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int StabilizationTicks = 3;
-    private const int ConfirmTicks       = 2;
-    private const int StepPercent        = 5;
+    private const int StabilizationTicks    = 3;
+    private const int ConfirmTicks          = 2;
+    private const int StepPercent           = 5;
+    private const int MaxStepPerMinute      = 5;
 
-    private const int DefaultMinMv        = 3296;
-    private const int DefaultMaxMv        = 4128;
-    private const int ChargingThresholdMv = 4160;
-    private const int CalibrationLowPct   = 5;
-    private const int CalibrationHighPct  = 95;
-    private const int SanityThreshold     = 40;
+    private const int DefaultMinMv          = 3296;
+    private const int DefaultMaxMv          = 4128;
+    private const int ChargingThresholdMv   = 4160;
+    private const int CalibrationLowPct     = 5;
+    private const int CalibrationHighPct    = 95;
+    private const int SanityThreshold       = 40;
 
     private int  _lastValidPercent;
-    private int  _lastSavedPercent = -1;
+    private int  _lastSavedPercent  = -1;
     private int  _stabilizationCounter;
     private int  _confirmCounter;
     private int  _confirmCandidate;
@@ -24,10 +25,11 @@ public sealed class BatteryReader
     private bool _hasRealReading;
     private bool _wasCharging;
     private bool _chargingJustStarted;
-    private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
+    private ChargeStatus _lastChargeStatus  = ChargeStatus.Discharging;
 
-    private int _minMv;
-    private int _maxMv;
+    private int      _minMv;
+    private int      _maxMv;
+    private DateTime _lastReadTime          = DateTime.UtcNow;
 
     public bool NeedsFirstReading => !_hasRealReading;
 
@@ -70,10 +72,12 @@ public sealed class BatteryReader
 
         _wasCharging = isCharging;
 
-        if (isCharging)
-            return HandleCharging(mv, percentRaw);
+        var result = isCharging
+            ? HandleCharging(mv, percentRaw)
+            : HandleDischarging(mv, percentRaw);
 
-        return HandleDischarging(mv, percentRaw);
+        _lastReadTime = DateTime.UtcNow;
+        return result;
     }
 
     private HeadsetState HandleCharging(int mv, int percentRaw)
@@ -105,10 +109,10 @@ public sealed class BatteryReader
             if (_confirmCounter < ConfirmTicks)
                 return new HeadsetState(0, ChargeStatus.Charging);
 
-            _lastValidPercent    = _confirmCandidate;
-            _confirmCounter      = 0;
-            _hasRealReading      = true;
-            _lastChargeStatus    = ChargeStatus.Charging;
+            _lastValidPercent = _confirmCandidate;
+            _confirmCounter   = 0;
+            _hasRealReading   = true;
+            _lastChargeStatus = ChargeStatus.Charging;
             SaveIfChanged(_lastValidPercent);
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
@@ -179,21 +183,38 @@ public sealed class BatteryReader
 
             _lastValidPercent = _confirmCandidate;
             _confirmCounter   = 0;
+            _hasRealReading   = true;
+            _lastChargeStatus = ChargeStatus.Discharging;
+            SaveIfChanged(_lastValidPercent);
+            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
-        else
-        {
-            int targetBucket = (Math.Clamp(target, 0, 100) / StepPercent) * StepPercent;
 
-            if (targetBucket < _lastValidPercent)
-                _lastValidPercent = Math.Max(_lastValidPercent - StepPercent, targetBucket);
-            else if (targetBucket > _lastValidPercent)
-                _lastValidPercent = Math.Min(_lastValidPercent + StepPercent, targetBucket);
+        int targetBucket2 = (Math.Clamp(target, 0, 100) / StepPercent) * StepPercent;
+
+        if (targetBucket2 != _lastValidPercent)
+        {
+            int maxSteps    = ComputeMaxSteps();
+            int stepsNeeded = Math.Abs(targetBucket2 - _lastValidPercent) / StepPercent;
+            int stepsToApply = Math.Min(stepsNeeded, maxSteps);
+
+            if (targetBucket2 < _lastValidPercent)
+                _lastValidPercent -= stepsToApply * StepPercent;
+            else
+                _lastValidPercent += stepsToApply * StepPercent;
+
+            _lastValidPercent = Math.Clamp(_lastValidPercent, 0, 100);
         }
 
         _lastChargeStatus = ChargeStatus.Discharging;
-        _hasRealReading   = true;
         SaveIfChanged(_lastValidPercent);
         return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+    }
+
+    private int ComputeMaxSteps()
+    {
+        double minutesElapsed = (DateTime.UtcNow - _lastReadTime).TotalMinutes;
+        double stepsAllowed   = minutesElapsed * MaxStepPerMinute / StepPercent;
+        return Math.Max(1, (int)Math.Ceiling(stepsAllowed));
     }
 
     public void NotifyCableRemoved()
