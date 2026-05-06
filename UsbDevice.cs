@@ -28,12 +28,13 @@ public static class UsbDevice
     private static bool _initialized = false;
     private static bool _poweredOn   = false;
 
-    public static bool TryRead(out int millivolts, out bool poweredOn, out bool isCharging, out int percent)
+    public static bool TryRead(out int millivolts, out bool poweredOn, out bool isCharging, out bool isFullyCharged, out int percent)
     {
-        millivolts = 0;
-        poweredOn  = false;
-        isCharging = false;
-        percent    = 0;
+        millivolts     = 0;
+        poweredOn      = false;
+        isCharging     = false;
+        isFullyCharged = false;
+        percent        = 0;
 
         LibUsbDotNet.UsbDevice? device = null;
         try
@@ -57,13 +58,14 @@ public static class UsbDevice
             bool ok = device.ControlTransfer(ref setupGet, Response, 64, out int transferred);
             if (!ok || transferred < 15) return false;
 
-            millivolts = (Response[12] << 8) | Response[13];
-            percent    = Response[14];
-            isCharging = Response[9] == 0x05 || Response[9] == 0x06;
+            millivolts     = (Response[12] << 8) | Response[13];
+            percent        = Response[14];
+            isCharging     = Response[9] == 0x05;
+            isFullyCharged = Response[9] == 0x06;
 
             if (!_initialized)
             {
-                if (millivolts == 0 && !isCharging) return false;
+                if (millivolts == 0 && !isCharging && !isFullyCharged) return false;
                 _initialized = true;
             }
 
