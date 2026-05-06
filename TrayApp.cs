@@ -220,7 +220,7 @@ public sealed class TrayApp : ApplicationContext
         return state.Status switch
         {
             ChargeStatus.FullyCharged => _iconGreen,
-            ChargeStatus.Charging     => _iconCharging,
+            ChargeStatus.Charging     => state.BatteryPercent >= 100 ? _iconGreen : _iconCharging,
             _ => state.BatteryPercent switch
             {
                 > 50 => _iconGreen,
