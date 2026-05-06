@@ -4,6 +4,16 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.1.2] — 2026-05-06
+
+### Fixed
+
+* `UsbDevice`: `resp[9] == 0x06` is now exposed as a dedicated `isFullyCharged` out parameter, separate from `isCharging` (`0x05`) — previously both were collapsed into a single flag, forcing `BatteryReader` to use heuristics for full-charge detection
+* `BatteryReader`: full-charge is now detected exclusively via `isFullyCharged` from `resp[9]`; `_fullChargeConfirmCounter`, voltage comparison, and `percentRaw == 100` fallback paths removed; `DefaultMaxMv` corrected from 4128 → 4200 mV based on observed readings
+* `HeadsetState` / `TrayApp`: tray icon and tooltip now show Fully Charged as soon as `BatteryPercent >= 100` during a Charging state, covering the trickle charge window where firmware holds `resp[9] == 0x05` for several minutes after the cell reaches capacity
+
+---
+
 ## [v1.1.1] — 2026-05-04
 
 ### Fixed
