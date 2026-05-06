@@ -114,33 +114,7 @@ public sealed class BatteryReader
         if (!_hasRealReading)
         {
             _chargingJustStarted = false;
-
-            int bucket = (percentRaw > 0 && percentRaw < 100)
-                ? (percentRaw / StepPercent) * StepPercent
-                : -1;
-
-            if (bucket < 0)
-                return new HeadsetState(0, ChargeStatus.Charging);
-
-            if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
-            {
-                _confirmCandidate = bucket;
-                _confirmCounter   = 1;
-            }
-            else
-            {
-                _confirmCounter++;
-            }
-
-            if (_confirmCounter < ConfirmTicks)
-                return new HeadsetState(0, ChargeStatus.Charging);
-
-            _lastValidPercent = _confirmCandidate;
-            _confirmCounter   = 0;
-            _hasRealReading   = true;
-            _lastChargeStatus = ChargeStatus.Charging;
-            SaveIfChanged(_lastValidPercent);
-            return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+            return BootstrapCharging(mv, percentRaw);
         }
 
         bool firmwareAt100 = percentRaw == 100;
@@ -203,6 +177,62 @@ public sealed class BatteryReader
             _chargingConfirmCandidate = -1;
         }
 
+        _lastChargeStatus = ChargeStatus.Charging;
+        SaveIfChanged(_lastValidPercent);
+        return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+    }
+
+    private HeadsetState BootstrapCharging(int mv, int percentRaw)
+    {
+        if (percentRaw == 100)
+        {
+            bool mvAtMax = mv > 0 && mv >= _maxMv;
+
+            if (mvAtMax)
+            {
+                _fullChargeConfirmCounter++;
+                if (_fullChargeConfirmCounter >= ChargingConfirmTicks)
+                {
+                    _lastValidPercent         = 100;
+                    _lastChargeStatus         = ChargeStatus.FullyCharged;
+                    _hasRealReading           = true;
+                    _fullyCharged             = true;
+                    _fullChargeConfirmCounter = 0;
+                    SaveIfChanged(100);
+                    return new HeadsetState(100, ChargeStatus.FullyCharged);
+                }
+            }
+            else
+            {
+                _fullChargeConfirmCounter = 0;
+            }
+
+            return new HeadsetState(0, ChargeStatus.Charging);
+        }
+
+        int bucket = (percentRaw > 0 && percentRaw < 100)
+            ? (percentRaw / StepPercent) * StepPercent
+            : -1;
+
+        if (bucket < 0)
+            return new HeadsetState(0, ChargeStatus.Charging);
+
+        if (_confirmCounter == 0 || Math.Abs(bucket - _confirmCandidate) > StepPercent)
+        {
+            _confirmCandidate = bucket;
+            _confirmCounter   = 1;
+        }
+        else
+        {
+            _confirmCounter++;
+        }
+
+        if (_confirmCounter < ConfirmTicks)
+            return new HeadsetState(0, ChargeStatus.Charging);
+
+        _lastValidPercent = _confirmCandidate;
+        _confirmCounter   = 0;
+        _hasRealReading   = true;
         _lastChargeStatus = ChargeStatus.Charging;
         SaveIfChanged(_lastValidPercent);
         return new HeadsetState(_lastValidPercent, _lastChargeStatus);
