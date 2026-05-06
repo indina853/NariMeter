@@ -23,7 +23,9 @@ public record HeadsetState(int BatteryPercent, ChargeStatus Status)
             ChargeStatus.Disconnected => "Disconnected",
             ChargeStatus.PoweredOff   => "Powered Off",
             ChargeStatus.FullyCharged => "100% Fully Charged",
-            ChargeStatus.Charging     => $"{BatteryPercent}% Charging",
+            ChargeStatus.Charging     => BatteryPercent >= 100
+                ? "100% Fully Charged"
+                : $"{BatteryPercent}% Charging",
             _                         => $"{BatteryPercent}%"
         };
 
