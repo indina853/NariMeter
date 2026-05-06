@@ -45,9 +45,7 @@ public sealed class BatteryReader
         _hasRealReading   = _lastValidPercent > 0;
         _minMv            = StateStore.LoadMinMv();
         _maxMv            = StateStore.LoadMaxMv();
-
-        if (_lastValidPercent == 100)
-            _fullyCharged = true;
+        _fullyCharged     = _lastValidPercent >= 100;
     }
 
     public HeadsetState PollState()
@@ -81,9 +79,6 @@ public sealed class BatteryReader
             _chargingConfirmCounter    = 0;
             _chargingConfirmCandidate  = -1;
             _fullChargeConfirmCounter  = 0;
-
-            if (_hasRealReading && _lastValidPercent >= 100 && !_fullyCharged)
-                _lastValidPercent = MaxChargingPercent;
         }
 
         if (!isCharging && _wasCharging)
