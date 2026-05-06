@@ -10,6 +10,7 @@ public sealed class BatteryReader
     private const int StepPercent          = 5;
     private const int MaxStepPerMinute     = 5;
     private const int SanityThreshold      = 40;
+    private const int MaxChargingPercent   = 95;
 
     private const int DefaultMinMv         = 3296;
     private const int DefaultMaxMv         = 4128;
@@ -28,6 +29,7 @@ public sealed class BatteryReader
     private bool _hasRealReading;
     private bool _wasCharging;
     private bool _chargingJustStarted;
+    private bool _fullyCharged;
     private ChargeStatus _lastChargeStatus = ChargeStatus.Discharging;
 
     private int      _minMv;
@@ -78,6 +80,9 @@ public sealed class BatteryReader
             _fullChargeConfirmCounter  = 0;
         }
 
+        if (!isCharging && _wasCharging)
+            _fullyCharged = false;
+
         _wasCharging = isCharging;
 
         var result = isCharging
@@ -90,6 +95,12 @@ public sealed class BatteryReader
 
     private HeadsetState HandleCharging(int mv, int percentRaw)
     {
+        if (_fullyCharged)
+        {
+            _lastChargeStatus = ChargeStatus.FullyCharged;
+            return new HeadsetState(100, ChargeStatus.FullyCharged);
+        }
+
         bool firmwareAt100 = percentRaw == 100;
         bool mvAtMax       = mv > 0 && mv >= _maxMv;
 
@@ -101,6 +112,7 @@ public sealed class BatteryReader
                 _lastValidPercent         = 100;
                 _lastChargeStatus         = ChargeStatus.FullyCharged;
                 _hasRealReading           = true;
+                _fullyCharged             = true;
                 _chargingConfirmCounter   = 0;
                 _chargingConfirmCandidate = -1;
                 _fullChargeConfirmCounter = 0;
@@ -120,7 +132,7 @@ public sealed class BatteryReader
         {
             _chargingJustStarted = false;
 
-            int bucket = (percentRaw > 0 && percentRaw <= 100)
+            int bucket = (percentRaw > 0 && percentRaw < 100)
                 ? (percentRaw / StepPercent) * StepPercent
                 : -1;
 
@@ -160,7 +172,7 @@ public sealed class BatteryReader
             ? (percentRaw / StepPercent) * StepPercent
             : -1;
 
-        if (firmwareBucket > _lastValidPercent)
+        if (firmwareBucket > _lastValidPercent && firmwareBucket <= MaxChargingPercent)
         {
             if (firmwareBucket != _chargingConfirmCandidate)
             {
@@ -179,7 +191,7 @@ public sealed class BatteryReader
                 _chargingConfirmCandidate = -1;
             }
         }
-        else
+        else if (firmwareBucket <= _lastValidPercent)
         {
             _chargingConfirmCounter   = 0;
             _chargingConfirmCandidate = -1;
