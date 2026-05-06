@@ -45,6 +45,9 @@ public sealed class BatteryReader
         _hasRealReading   = _lastValidPercent > 0;
         _minMv            = StateStore.LoadMinMv();
         _maxMv            = StateStore.LoadMaxMv();
+
+        if (_lastValidPercent == 100)
+            _fullyCharged = true;
     }
 
     public HeadsetState PollState()
@@ -78,6 +81,9 @@ public sealed class BatteryReader
             _chargingConfirmCounter    = 0;
             _chargingConfirmCandidate  = -1;
             _fullChargeConfirmCounter  = 0;
+
+            if (_hasRealReading && _lastValidPercent >= 100 && !_fullyCharged)
+                _lastValidPercent = MaxChargingPercent;
         }
 
         if (!isCharging && _wasCharging)
@@ -97,32 +103,9 @@ public sealed class BatteryReader
     {
         if (_fullyCharged)
         {
+            _lastValidPercent = 100;
             _lastChargeStatus = ChargeStatus.FullyCharged;
             return new HeadsetState(100, ChargeStatus.FullyCharged);
-        }
-
-        bool firmwareAt100 = percentRaw == 100;
-        bool mvAtMax       = mv > 0 && mv >= _maxMv;
-
-        if (firmwareAt100 && mvAtMax)
-        {
-            _fullChargeConfirmCounter++;
-            if (_fullChargeConfirmCounter >= ChargingConfirmTicks)
-            {
-                _lastValidPercent         = 100;
-                _lastChargeStatus         = ChargeStatus.FullyCharged;
-                _hasRealReading           = true;
-                _fullyCharged             = true;
-                _chargingConfirmCounter   = 0;
-                _chargingConfirmCandidate = -1;
-                _fullChargeConfirmCounter = 0;
-                SaveIfChanged(100);
-                return new HeadsetState(100, ChargeStatus.FullyCharged);
-            }
-        }
-        else
-        {
-            _fullChargeConfirmCounter = 0;
         }
 
         if (mv > 0 && percentRaw > 0 && percentRaw < 100)
@@ -158,6 +141,29 @@ public sealed class BatteryReader
             _lastChargeStatus = ChargeStatus.Charging;
             SaveIfChanged(_lastValidPercent);
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+        }
+
+        bool firmwareAt100 = percentRaw == 100;
+        bool mvAtMax       = mv > 0 && mv >= _maxMv;
+
+        if (firmwareAt100 && mvAtMax)
+        {
+            _fullChargeConfirmCounter++;
+            if (_fullChargeConfirmCounter >= ChargingConfirmTicks)
+            {
+                _lastValidPercent         = 100;
+                _lastChargeStatus         = ChargeStatus.FullyCharged;
+                _fullyCharged             = true;
+                _chargingConfirmCounter   = 0;
+                _chargingConfirmCandidate = -1;
+                _fullChargeConfirmCounter = 0;
+                SaveIfChanged(100);
+                return new HeadsetState(100, ChargeStatus.FullyCharged);
+            }
+        }
+        else
+        {
+            _fullChargeConfirmCounter = 0;
         }
 
         if (_chargingJustStarted)
