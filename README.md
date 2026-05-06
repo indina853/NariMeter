@@ -143,6 +143,7 @@ Within the response buffer, the relevant fields are:
 | `[1]` | `0x01` | Device idle / headset not active |
 | `[2]` | `0x00` | Confirms idle state |
 | `[9]` | `0x05` | USB cable connected (charging) |
+| `[9]` | `0x06` | USB cable connected, battery fully charged |
 | `[9]` | `0x03` | USB cable disconnected (discharging) |
 | `[12:13]` | uint16 big-endian | Battery voltage in millivolts — primary source for percentage calculation |
 | `[14]` | uint8 | Battery percentage reported by device firmware — used as sanity check only |
@@ -168,10 +169,11 @@ Battery percentage is displayed in **steps of 5%** and transitions smoothly — 
 The device reports charge state natively via `response[9]`:
 
 ```csharp
-isCharging = response[9] == 0x05;
+isCharging    = response[9] == 0x05;
+isFullyCharged = response[9] == 0x06;
 ```
 
-During charging, the millivolt reading rises continuously as the cell charges, providing a reliable and gradual progression toward 100%. The firmware value at `response[14]` is ignored for percentage display during charging for the same reason as discharging — the firmware inflates the value immediately upon cable connection.
+`isFullyCharged` short-circuits all stabilization and percentage calculation paths in `BatteryReader` — it is checked first and treated as authoritative. The tray icon and tooltip also treat `Charging && BatteryPercent >= 100` as Fully Charged to cover the trickle charge window before the firmware byte transitions: the firmware can remain on `0x05` for several minutes after the cell reaches capacity while voltage stabilizes at 4200 mV.
 
 ### Step 6 — State machine and debouncing
 
