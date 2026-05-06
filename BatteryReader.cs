@@ -4,22 +4,22 @@ namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int StabilizationTicks        = 3;
-    private const int ConfirmTicks              = 2;
-    private const int ChargingConfirmTicks      = 4;
-    private const int DischargeConfirmTicks     = 3;
-    private const int StepPercent               = 5;
-    private const int MaxStepPerMinute          = 5;
-    private const int SanityThreshold           = 40;
-    private const int MaxChargingPercent        = 95;
+    private const int StabilizationTicks    = 3;
+    private const int ConfirmTicks          = 2;
+    private const int ChargingConfirmTicks  = 4;
+    private const int DischargeConfirmTicks = 3;
+    private const int StepPercent           = 5;
+    private const int MaxStepPerMinute      = 5;
+    private const int SanityThreshold       = 40;
+    private const int MaxChargingPercent    = 95;
 
-    private const int DefaultMinMv              = 3296;
-    private const int DefaultMaxMv              = 4128;
-    private const int CalibrationLowPct         = 5;
-    private const int CalibrationHighPct        = 95;
+    private const int DefaultMinMv          = 3296;
+    private const int DefaultMaxMv          = 4128;
+    private const int CalibrationLowPct     = 5;
+    private const int CalibrationHighPct    = 95;
 
     private int  _lastValidPercent;
-    private int  _lastSavedPercent              = -1;
+    private int  _lastSavedPercent          = -1;
     private int  _stabilizationCounter;
     private int  _confirmCounter;
     private int  _confirmCandidate;
@@ -32,11 +32,11 @@ public sealed class BatteryReader
     private bool _wasCharging;
     private bool _chargingJustStarted;
     private bool _fullyCharged;
-    private ChargeStatus _lastChargeStatus      = ChargeStatus.Discharging;
+    private ChargeStatus _lastChargeStatus  = ChargeStatus.Discharging;
 
     private int      _minMv;
     private int      _maxMv;
-    private DateTime _lastReadTime              = DateTime.UtcNow;
+    private DateTime _lastReadTime          = DateTime.UtcNow;
 
     public bool NeedsFirstReading => !_hasRealReading;
 
@@ -81,10 +81,10 @@ public sealed class BatteryReader
 
             if (!_wasCharging)
             {
-                _chargingJustStarted       = true;
-                _chargingConfirmCounter    = 0;
-                _chargingConfirmCandidate  = -1;
-                _fullChargeConfirmCounter  = 0;
+                _chargingJustStarted      = true;
+                _chargingConfirmCounter   = 0;
+                _chargingConfirmCandidate = -1;
+                _fullChargeConfirmCounter = 0;
             }
         }
         else
@@ -287,6 +287,10 @@ public sealed class BatteryReader
             _confirmCounter   = 0;
             _hasRealReading   = true;
             _lastChargeStatus = ChargeStatus.Discharging;
+
+            if (_lastValidPercent >= 100)
+                _fullyCharged = true;
+
             SaveIfChanged(_lastValidPercent);
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
@@ -303,6 +307,9 @@ public sealed class BatteryReader
                 _lastValidPercent += stepsToApply * StepPercent;
 
             _lastValidPercent = Math.Clamp(_lastValidPercent, 0, 100);
+
+            if (_lastValidPercent >= 100)
+                _fullyCharged = true;
         }
 
         _lastChargeStatus = ChargeStatus.Discharging;
