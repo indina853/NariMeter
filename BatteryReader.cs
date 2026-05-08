@@ -238,6 +238,17 @@ public sealed class BatteryReader
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
         }
 
+        if (_fullyCharged && targetBucket < 100)
+        {
+            _dischargeConfirmCounter++;
+            if (_dischargeConfirmCounter < DischargeConfirmTicks)
+            {
+                _lastChargeStatus = ChargeStatus.Discharging;
+                return new HeadsetState(100, ChargeStatus.Discharging);
+            }
+            _fullyCharged = false;
+        }
+
         if (targetBucket != _lastValidPercent)
         {
             int maxSteps     = ComputeMaxSteps();
