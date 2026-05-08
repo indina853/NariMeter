@@ -4,6 +4,18 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.1.3] — 2026-05-06
+
+### Fixed
+
+* `BatteryReader`: mV calibration restricted to discharge only — charger voltage no longer inflates `_maxMv`, preventing premature percentage drops after unplugging
+* `BatteryReader`: `DefaultMaxMv` corrected to 4128mV (discharge ceiling); saved values above this threshold are discarded on load via `StateStore`
+* `BatteryReader`: battery display holds at 100% for `DischargeConfirmTicks` cycles after cable removal before allowing a drop, preventing the immediate 100% → 95% jump caused by charger voltage settling
+* `BatteryReader`: `_wasCharging` transition debounced — transient `resp[9] == 0x03` glitches during charging no longer reset confirmation progress
+* `StateStore`: saved `MaxMv` values above `DefaultMaxMv` are discarded on load, cleaning up state files written by previous builds
+
+---
+
 ## [v1.1.2] — 2026-05-06
 
 ### Fixed
