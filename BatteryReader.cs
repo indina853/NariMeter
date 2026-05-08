@@ -14,7 +14,7 @@ public sealed class BatteryReader
     private const int MaxChargingPercent    = 95;
 
     private const int DefaultMinMv          = 3296;
-    private const int DefaultMaxMv          = 4200;
+    private const int DefaultMaxMv          = 4128;
     private const int CalibrationLowPct     = 5;
     private const int CalibrationHighPct    = 95;
 
@@ -95,25 +95,18 @@ public sealed class BatteryReader
                 _chargingConfirmCounter   = 0;
                 _chargingConfirmCandidate = -1;
             }
+            _wasCharging = true;
         }
         else
         {
-            if (_wasCharging)
+            _dischargeConfirmCounter++;
+            if (_dischargeConfirmCounter >= DischargeConfirmTicks)
             {
-                _dischargeConfirmCounter = 1;
-            }
-            else if (_dischargeConfirmCounter > 0)
-            {
-                _dischargeConfirmCounter++;
-                if (_dischargeConfirmCounter >= DischargeConfirmTicks)
-                {
-                    _fullyCharged            = false;
-                    _dischargeConfirmCounter = 0;
-                }
+                _fullyCharged            = false;
+                _dischargeConfirmCounter = 0;
+                _wasCharging             = false;
             }
         }
-
-        _wasCharging = isCharging;
 
         var result = isCharging
             ? HandleCharging(mv, percentRaw)
@@ -125,9 +118,6 @@ public sealed class BatteryReader
 
     private HeadsetState HandleCharging(int mv, int percentRaw)
     {
-        if (mv > 0 && percentRaw > 0 && percentRaw < 100)
-            TryCalibrateLow(mv, percentRaw);
-
         if (!_hasRealReading)
         {
             _chargingJustStarted = false;
@@ -285,15 +275,6 @@ public sealed class BatteryReader
         _stabilizing          = true;
         _stabilizationCounter = 0;
         _lastChargeStatus     = ChargeStatus.Discharging;
-    }
-
-    private void TryCalibrateLow(int mv, int pct)
-    {
-        if (pct <= CalibrationLowPct && mv < _minMv)
-        {
-            _minMv = mv;
-            StateStore.SaveMinMv(_minMv);
-        }
     }
 
     private void TryCalibrate(int mv, int pct)
