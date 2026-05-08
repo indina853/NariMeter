@@ -97,7 +97,7 @@ public static class StateStore
             return loaded with
             {
                 MinMv = loaded.MinMv > 0 ? loaded.MinMv : DefaultMinMv,
-                MaxMv = loaded.MaxMv > 0 ? loaded.MaxMv : DefaultMaxMv
+                MaxMv = loaded.MaxMv > 0 && loaded.MaxMv <= DefaultMaxMv ? loaded.MaxMv : DefaultMaxMv
             };
         }
         catch { return Default(); }
