@@ -19,7 +19,7 @@ Synapse installs a constellation of background services — `RazerNahimic`, `Raz
 
 The interface itself buries the battery indicator under multiple clicks inside a large, slow-loading overlay. For a single piece of information — *how much battery does my headset have?* — the friction is remarkable.
 
-NariMeter answers that question with a glanceable tray icon, ~25 MB on disk, and no network activity whatsoever.
+NariMeter answers that question with a glanceable tray icon, ~336 KB on disk, and no network activity whatsoever.
 
 ---
 
@@ -226,7 +226,7 @@ dotnet build
 dotnet publish -c Release
 ```
 
-Output: `bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\NariMeter.exe`
+Output: `bin\Release\net8.0-windows\win-x64\publish\NariMeter.exe`
 
 > The published executable requires the [.NET 8 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime) on the target machine.
 
@@ -236,7 +236,7 @@ Output: `bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\NariMeter.exe`
 
 | Metric | Value |
 |---|---|
-| Executable size | ~25 MB |
+| Executable size | ~336 KB |
 | RAM usage (steady state) | ~15 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
