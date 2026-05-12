@@ -4,6 +4,16 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.1.4] — 2026-05-12
+
+### Changed
+
+* Executable size reduced from ~25 MB to ~336 KB by switching `TargetFramework` from `net8.0-windows10.0.19041.0` to `net8.0-windows`
+* CI migrated to `windows-2025-vs2026`
+* Assembly metadata cleaned up; git hash suppressed from product version
+
+---
+
 ## [v1.1.3] — 2026-05-06
 
 ### Fixed
