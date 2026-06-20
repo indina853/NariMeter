@@ -99,6 +99,8 @@ public sealed class TrayApp : ApplicationContext
                 _lastState     = state;
                 _stateTimer.Interval = StateIntervalMs;
                 UpdateTray(state);
+                if (_notificationsEnabled)
+                    ShowNotification("Headset Powered On", "Razer Nari", ToolTipIcon.Info);
             }
         }
         else
@@ -111,6 +113,14 @@ public sealed class TrayApp : ApplicationContext
                 _stateTimer.Interval = DisconnectedIntervalMs;
                 ResetNotificationFlags();
                 UpdateTray(state);
+
+                if (_notificationsEnabled)
+                {
+                    if (state.Status == ChargeStatus.Disconnected)
+                        ShowNotification("Headset Disconnected", "Razer Nari", ToolTipIcon.Warning);
+                    else if (state.Status == ChargeStatus.PoweredOff)
+                        ShowNotification("Headset Powered Off", "Razer Nari", ToolTipIcon.Info);
+                }
             }
         }
     }
