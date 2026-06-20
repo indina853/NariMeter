@@ -4,6 +4,18 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.2.0] — 2026-06-19
+
+### Added
+- Headset Powered On notification when the headset becomes active
+- Headset Powered Off notification when the headset is turned off with dongle connected
+- Headset Disconnected notification when the dongle is removed
+
+### Changed
+- LibUsbDotNet updated from 2.2.29 to 2.2.85
+
+---
+
 ## [v1.1.4] — 2026-05-12
 
 ### Changed
