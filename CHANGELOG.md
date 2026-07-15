@@ -4,6 +4,19 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.3.0] — 2026-07-15
+
+### Added
+- Native detection of USB dongle connect/disconnect events, replacing polling-based inference
+- Last saved battery percent now stored with a timestamp, so a stale cache is ignored on app startup
+
+### Changed
+- Charging and discharge confirmation now use elapsed time instead of counting fixed poll cycles
+- USB connection stays open across reads instead of reconnecting on every poll
+- Tray polling now adapts its interval to the current device state instead of running on two fixed timers
+
+---
+
 ## [v1.2.0] — 2026-06-19
 
 ### Added
