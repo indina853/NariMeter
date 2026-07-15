@@ -19,7 +19,7 @@ Synapse installs a constellation of background services — `RazerNahimic`, `Raz
 
 The interface itself buries the battery indicator under multiple clicks inside a large, slow-loading overlay. For a single piece of information — *how much battery does my headset have?* — the friction is remarkable.
 
-NariMeter answers that question with a glanceable tray icon, ~345 KB on disk, and no network activity whatsoever.
+NariMeter answers that question with a glanceable tray icon, ~349 KB on disk, and no network activity whatsoever.
 
 ---
 
@@ -31,8 +31,10 @@ NariMeter answers that question with a glanceable tray icon, ~345 KB on disk, an
 - Fully charged indicator when the cable is connected and battery is at 100%
 - Headphone icon when the headset is powered off or disconnected
 - Hover tooltip with current status
+- Native USB connect/disconnect detection — no polling delay to notice the dongle is gone
 - **Low battery notifications** — configurable warn and critical thresholds
 - **Fully charged notification** — alerts when the headset reaches 100%
+- **Headset power and connection notifications** — alerts when the headset turns on, turns off, or the dongle is disconnected
 - **Run at Startup** toggle in the right-click menu (via Windows registry, no installer required)
 - Fully portable — single `.exe`, no installation, no registry pollution beyond the optional startup entry
 
@@ -175,24 +177,24 @@ isFullyCharged = response[9] == 0x06;
 
 `isFullyCharged` short-circuits all stabilization and percentage calculation paths in `BatteryReader` — it is checked first and treated as authoritative. The tray icon and tooltip also treat `Charging && BatteryPercent >= 100` as Fully Charged to cover the trickle charge window before the firmware byte transitions: the firmware can remain on `0x05` for several minutes after the cell reaches capacity while voltage stabilizes at 4200 mV.
 
-### Step 6 — State machine and debouncing
+### Step 6 — Device detection and state machine
 
-Raw USB readings are noisy, particularly at startup when the host controller and device are still negotiating. NariMeter implements independent debounce thresholds in `UsbDevice.cs`:
+Dongle connect and disconnect are detected natively via the Windows `WM_DEVICECHANGE` message, rather than inferred from repeated failed USB reads. This means disconnection is reported immediately instead of after several failed poll cycles.
 
-- **Powered on** is only confirmed after **4 consecutive active readings** (4 × 2s = 8 seconds)
-- **Powered off** is confirmed after **4 consecutive idle readings**
+The USB device handle is kept open between reads rather than opened and closed on every poll, reducing overhead and avoiding transient claim/release failures.
 
-Battery level is polled every **30 seconds** when active, which is sufficient given the slow rate of battery discharge.
+Confirmation of state transitions — headset powering on, battery charge percentage advancing, discharge stabilizing after unplug — uses time-based hold windows rather than fixed tick counts, so behavior stays consistent regardless of poll interval. The tray poll interval itself adapts to the current state: fast while a transition is pending, slower when idle or disconnected, and standard while actively reading battery data.
 
 ### Step 7 — Architecture overview
 
 ```
 Program.cs
-└── TrayApp.cs           — ApplicationContext, timer orchestration, tray icon management
+└── TrayApp.cs           — ApplicationContext, adaptive timer, tray icon management
     ├── BatteryReader.cs — Charge state logic, stabilization, state persistence
-    ├── UsbDevice.cs     — USB HID control transfers, static buffers, debounce state machine
+    ├── DeviceNotifier.cs — Native USB connect/disconnect detection via WM_DEVICECHANGE
+    ├── UsbDevice.cs     — USB HID control transfers, persistent device handle
     ├── HeadsetState.cs  — Immutable state record, ChargeStatus enum, tooltip formatting
-    ├── StateStore.cs    — JSON persistence of last known percentage and calibrated mV bounds
+    ├── StateStore.cs    — JSON persistence of last known percentage, timestamp, and calibrated mV bounds
     └── StartupManager.cs — Windows registry autostart toggle (HKCU\...\Run)
 ```
 
@@ -205,6 +207,9 @@ NariMeter supports optional Windows balloon notifications, toggled via the right
 - **Low Battery Warning** — triggered at a configurable threshold (default: 20%)
 - **Battery Critical** — triggered at a configurable threshold (default: 10%)
 - **Fully Charged** — triggered when the headset reaches 100% while on cable
+- **Headset Powered On** — triggered when the headset becomes active
+- **Headset Powered Off** — triggered when the headset is turned off with the dongle still connected
+- **Headset Disconnected** — triggered when the dongle is removed from the PC
 
 Warn and critical thresholds are configurable independently via the right-click menu and persist across sessions.
 
@@ -236,13 +241,12 @@ Output: `bin\Release\net8.0-windows\win-x64\publish\NariMeter.exe`
 
 | Metric | Value |
 |---|---|
-| Executable size | ~345 KB |
+| Executable size | ~349 KB |
 | RAM usage (steady state) | ~15 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
 | Disk writes | Only on battery % change and settings updates |
-| Poll interval — state | 2 seconds |
-| Poll interval — battery | 30 seconds |
+| Poll interval | Adaptive — 500ms during transitions, up to several seconds when idle |
 
 ---
 
@@ -251,6 +255,7 @@ Output: `bin\Release\net8.0-windows\win-x64\publish\NariMeter.exe`
 ```
 NariMeter/
 ├── BatteryReader.cs       — Battery charge state logic
+├── DeviceNotifier.cs      — Native USB connect/disconnect detection via WM_DEVICECHANGE
 ├── HeadsetState.cs        — State record and charge status definitions
 ├── Program.cs             — Entry point
 ├── StartupManager.cs      — Run at startup via Windows registry
