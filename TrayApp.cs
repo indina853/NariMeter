@@ -6,18 +6,17 @@ namespace NariMeter;
 
 public sealed class TrayApp : ApplicationContext
 {
-    private const int StateIntervalMs        = 2000;
-    private const int BatteryIntervalMs      = 30000;
-    private const int BatteryFastIntervalMs  = 3000;
-    private const int DisconnectedIntervalMs = 500;
+    private const int ActiveIntervalMs       = 2000;
+    private const int TransitionIntervalMs   = 500;
+    private const int PoweredOffIntervalMs   = 1000;
+    private const int DisconnectedIntervalMs = 5000;
+    private const int FirstReadingIntervalMs = 1000;
     private const int ActiveThreshold        = 4;
-
-    private static readonly TimeSpan StalenessThreshold = TimeSpan.FromMinutes(10);
 
     private readonly NotifyIcon _tray;
     private readonly BatteryReader _reader;
-    private readonly System.Windows.Forms.Timer _stateTimer;
-    private readonly System.Windows.Forms.Timer _batteryTimer;
+    private readonly DeviceNotifier _notifier;
+    private readonly System.Windows.Forms.Timer _timer;
     private readonly Icon _iconHeadphone;
     private readonly Icon _iconGreen;
     private readonly Icon _iconYellow;
@@ -33,7 +32,6 @@ public sealed class TrayApp : ApplicationContext
     private bool         _notificationsEnabled;
     private int          _cachedPercent = 0;
     private ChargeStatus _cachedStatus  = ChargeStatus.Discharging;
-    private DateTime     _lastSuccessfulRead = DateTime.UtcNow;
     private int          _lowBatteryWarn;
     private int          _lowBatteryCrit;
     private ToolStripMenuItem _notifyToggle = null!;
@@ -47,11 +45,12 @@ public sealed class TrayApp : ApplicationContext
         _iconCharging  = LoadIcon("BatteryCharging");
 
         _notificationsEnabled = StateStore.LoadNotificationsEnabled();
-        _cachedPercent        = StateStore.LoadLastPercent();
         _lowBatteryWarn       = StateStore.LoadLowBatteryWarn();
         _lowBatteryCrit       = StateStore.LoadLowBatteryCrit();
 
         _reader = new BatteryReader();
+
+        _cachedPercent = _reader.NeedsFirstReading ? 0 : StateStore.LoadLastPercent();
 
         _tray = new NotifyIcon
         {
@@ -61,21 +60,47 @@ public sealed class TrayApp : ApplicationContext
             ContextMenuStrip = BuildMenu()
         };
 
-        _stateTimer = new System.Windows.Forms.Timer { Interval = StateIntervalMs };
-        _stateTimer.Tick += OnStateTick;
-        _stateTimer.Start();
+        _notifier = new DeviceNotifier();
+        _notifier.DeviceArrived += OnDeviceArrived;
+        _notifier.DeviceRemoved += OnDeviceRemoved;
 
-        _batteryTimer = new System.Windows.Forms.Timer
-        {
-            Interval = _reader.NeedsFirstReading ? BatteryFastIntervalMs : BatteryIntervalMs
-        };
-        _batteryTimer.Tick += OnBatteryTick;
-        _batteryTimer.Start();
+        _timer = new System.Windows.Forms.Timer { Interval = TransitionIntervalMs };
+        _timer.Tick += OnTick;
+        _timer.Start();
     }
 
-    private void OnStateTick(object? sender, EventArgs e)
+    private void OnDeviceArrived(object? sender, EventArgs e)
     {
-        var state = _reader.PollState();
+        _timer.Stop();
+        _timer.Interval = TransitionIntervalMs;
+        _timer.Start();
+        OnTick(this, EventArgs.Empty);
+    }
+
+    private void OnDeviceRemoved(object? sender, EventArgs e)
+    {
+        UsbDevice.CloseDevice();
+        UsbDevice.Reset();
+        _activeConfirm = 0;
+
+        if (_lastState.Status != ChargeStatus.Disconnected)
+        {
+            _lastState = HeadsetState.Disconnected;
+            ResetNotificationFlags();
+            UpdateTray(_lastState);
+
+            if (_notificationsEnabled)
+                ShowNotification("Headset Disconnected", "Razer Nari", ToolTipIcon.Warning);
+        }
+
+        _timer.Stop();
+        _timer.Interval = DisconnectedIntervalMs;
+        _timer.Start();
+    }
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        var state = _reader.Poll();
 
         if (!_initialized)
         {
@@ -85,80 +110,88 @@ public sealed class TrayApp : ApplicationContext
                 _lastState = state;
                 UpdateTray(state);
             }
+            ScheduleNext(state);
             return;
         }
 
-        if (!state.IsInactive)
-        {
-            _activeConfirm++;
-            if (_activeConfirm < ActiveThreshold) return;
-
-            if (_lastState.IsInactive)
-            {
-                _activeConfirm = 0;
-                _lastState     = state;
-                _stateTimer.Interval = StateIntervalMs;
-                UpdateTray(state);
-                if (_notificationsEnabled)
-                    ShowNotification("Headset Powered On", "Razer Nari", ToolTipIcon.Info);
-            }
-        }
+        if (state.IsInactive)
+            HandleInactive(state);
         else
+            HandleActive(state);
+
+        ScheduleNext(_lastState);
+    }
+
+    private void HandleInactive(HeadsetState state)
+    {
+        _activeConfirm = 0;
+
+        if (!_lastState.IsInactive || _lastState.Status != state.Status)
         {
-            _activeConfirm = 0;
+            _lastState = state;
+            ResetNotificationFlags();
+            UpdateTray(state);
 
-            if (!_lastState.IsInactive || _lastState.Status != state.Status)
+            if (_notificationsEnabled)
             {
-                _lastState = state;
-                _stateTimer.Interval = DisconnectedIntervalMs;
-                ResetNotificationFlags();
-                UpdateTray(state);
-
-                if (_notificationsEnabled)
-                {
-                    if (state.Status == ChargeStatus.Disconnected)
-                        ShowNotification("Headset Disconnected", "Razer Nari", ToolTipIcon.Warning);
-                    else if (state.Status == ChargeStatus.PoweredOff)
-                        ShowNotification("Headset Powered Off", "Razer Nari", ToolTipIcon.Info);
-                }
+                if (state.Status == ChargeStatus.Disconnected)
+                    ShowNotification("Headset Disconnected", "Razer Nari", ToolTipIcon.Warning);
+                else if (state.Status == ChargeStatus.PoweredOff)
+                    ShowNotification("Headset Powered Off", "Razer Nari", ToolTipIcon.Info);
             }
         }
     }
 
-    private void OnBatteryTick(object? sender, EventArgs e)
+    private void HandleActive(HeadsetState state)
     {
-        if (DateTime.UtcNow - _lastSuccessfulRead > StalenessThreshold)
+        if (_lastState.IsInactive)
         {
-            _lastSuccessfulRead = DateTime.UtcNow;
+            _activeConfirm++;
+            if (_activeConfirm < ActiveThreshold) return;
+
+            _activeConfirm = 0;
+            _lastState     = state.BatteryPercent > 0
+                ? state
+                : HeadsetState.FromCache(_cachedPercent, _cachedStatus);
+            UpdateTray(_lastState);
+
+            if (_notificationsEnabled)
+                ShowNotification("Headset Powered On", "Razer Nari", ToolTipIcon.Info);
             return;
         }
 
-        if (_lastState.IsInactive) return;
-
-        var state = _reader.PollBattery();
-
-        if (!_reader.NeedsFirstReading && _batteryTimer.Interval == BatteryFastIntervalMs)
-            _batteryTimer.Interval = BatteryIntervalMs;
-
-        if (state.BatteryPercent == 0 && !_lastState.IsInactive)
+        if (state.BatteryPercent == 0)
         {
             UpdateTray(HeadsetState.FromCache(_cachedPercent, _cachedStatus));
             return;
         }
 
-        if (state.IsInactive) return;
-
-        if (state.BatteryPercent > 0)
-        {
-            _cachedPercent      = state.BatteryPercent;
-            _cachedStatus       = state.Status;
-            _lastSuccessfulRead = DateTime.UtcNow;
-        }
+        _cachedPercent = state.BatteryPercent;
+        _cachedStatus  = state.Status;
 
         var previous = _lastState;
         _lastState = state;
         UpdateTray(state);
         CheckNotifications(previous, state);
+    }
+
+    private void ScheduleNext(HeadsetState state)
+    {
+        int interval;
+
+        if (UsbDevice.TransitionPending || _activeConfirm > 0)
+            interval = TransitionIntervalMs;
+        else if (state.Status == ChargeStatus.Disconnected)
+            interval = DisconnectedIntervalMs;
+        else if (state.Status == ChargeStatus.PoweredOff)
+            interval = PoweredOffIntervalMs;
+        else if (_reader.NeedsFirstReading)
+            interval = FirstReadingIntervalMs;
+        else
+            interval = ActiveIntervalMs;
+
+        if (_timer.Interval != interval)
+            _timer.Interval = interval;
     }
 
     private void CheckNotifications(HeadsetState previous, HeadsetState current)
@@ -347,8 +380,9 @@ public sealed class TrayApp : ApplicationContext
     {
         if (disposing)
         {
-            _stateTimer.Dispose();
-            _batteryTimer.Dispose();
+            _timer.Dispose();
+            _notifier.Dispose();
+            UsbDevice.CloseDevice();
             _iconHeadphone.Dispose();
             _iconGreen.Dispose();
             _iconYellow.Dispose();
