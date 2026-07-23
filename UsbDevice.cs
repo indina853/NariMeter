@@ -6,6 +6,7 @@ namespace NariMeter;
 public static class UsbDevice
 {
     public  const string DeviceName      = "Razer Nari";
+    public  const string HardwareId      = "VID_1532&PID_051C";
     private const int    VendorId        = 0x1532;
     private const int    ProductId       = 0x051C;
     private const int    Interface       = 5;
@@ -23,10 +24,15 @@ public static class UsbDevice
 
     private static readonly byte[] Response = new byte[64];
 
+    private static LibUsbDotNet.UsbDevice? _device;
+
     private static int  _idleCount   = 0;
     private static int  _activeCount = 0;
     private static bool _initialized = false;
     private static bool _poweredOn   = false;
+
+    public static bool TransitionPending =>
+        _poweredOn ? _idleCount > 0 : _activeCount > 0;
 
     public static bool TryRead(out int millivolts, out bool poweredOn, out bool isCharging, out bool isFullyCharged, out int percent)
     {
@@ -36,27 +42,25 @@ public static class UsbDevice
         isFullyCharged = false;
         percent        = 0;
 
-        LibUsbDotNet.UsbDevice? device = null;
         try
         {
-            var finder = new UsbDeviceFinder(VendorId, ProductId);
-            device = LibUsbDotNet.UsbDevice.OpenUsbDevice(finder);
-            if (device == null) return false;
-
-            if (device is IUsbDevice wholeDevice)
-                wholeDevice.ClaimInterface(Interface);
+            if (!EnsureOpen()) return false;
 
             var setupSet = new UsbSetupPacket(
                 (byte)(UsbCtrlFlags.Direction_Out | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
                 0x09, 0x03FF, (short)Interface, (short)SetData.Length);
-            device.ControlTransfer(ref setupSet, SetData, SetData.Length, out _);
+            _device!.ControlTransfer(ref setupSet, SetData, SetData.Length, out _);
 
             var setupGet = new UsbSetupPacket(
                 (byte)(UsbCtrlFlags.Direction_In | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
                 0x01, 0x03FF, (short)Interface, 64);
 
-            bool ok = device.ControlTransfer(ref setupGet, Response, 64, out int transferred);
-            if (!ok || transferred < 15) return false;
+            bool ok = _device.ControlTransfer(ref setupGet, Response, 64, out int transferred);
+            if (!ok || transferred < 15)
+            {
+                CloseDevice();
+                return false;
+            }
 
             millivolts     = (Response[12] << 8) | Response[13];
             percent        = Response[14];
@@ -87,17 +91,42 @@ public static class UsbDevice
             poweredOn = _poweredOn;
             return true;
         }
-        catch { return false; }
-        finally
+        catch
         {
-            try
-            {
-                if (device is IUsbDevice wd) wd.ReleaseInterface(Interface);
-                device?.Close();
-                LibUsbDotNet.UsbDevice.Exit();
-            }
-            catch { }
+            CloseDevice();
+            return false;
         }
+    }
+
+    private static bool EnsureOpen()
+    {
+        if (_device is { IsOpen: true }) return true;
+
+        CloseDevice();
+
+        var finder = new UsbDeviceFinder(VendorId, ProductId);
+        _device = LibUsbDotNet.UsbDevice.OpenUsbDevice(finder);
+        if (_device == null) return false;
+
+        if (_device is IUsbDevice wholeDevice)
+            wholeDevice.ClaimInterface(Interface);
+
+        return true;
+    }
+
+    public static void CloseDevice()
+    {
+        if (_device == null) return;
+
+        try
+        {
+            if (_device is IUsbDevice wd) wd.ReleaseInterface(Interface);
+            _device.Close();
+            LibUsbDotNet.UsbDevice.Exit();
+        }
+        catch { }
+
+        _device = null;
     }
 
     public static void Reset()

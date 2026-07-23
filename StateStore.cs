@@ -18,16 +18,18 @@ public static class StateStore
     private const int DefaultMaxMv          = 4128;
 
     private record PersistedState(
-        int  LastValidPercent,
-        bool NotificationsEnabled,
-        int  LowBatteryWarn,
-        int  LowBatteryCrit,
-        int  MinMv,
-        int  MaxMv);
+        int      LastValidPercent,
+        bool     NotificationsEnabled,
+        int      LowBatteryWarn,
+        int      LowBatteryCrit,
+        int      MinMv,
+        int      MaxMv,
+        DateTime LastPercentUtc = default);
 
     private static PersistedState? _cache;
 
-    public static int  LoadLastPercent()          => Get().LastValidPercent;
+    public static int      LoadLastPercent()      => Get().LastValidPercent;
+    public static DateTime LoadLastPercentUtc()   => Get().LastPercentUtc;
     public static bool LoadNotificationsEnabled() => Get().NotificationsEnabled;
     public static int  LoadLowBatteryWarn()       => Get().LowBatteryWarn;
     public static int  LoadLowBatteryCrit()       => Get().LowBatteryCrit;
@@ -36,7 +38,7 @@ public static class StateStore
 
     public static void SavePercent(int percent)
     {
-        Mutate(s => s with { LastValidPercent = percent });
+        Mutate(s => s with { LastValidPercent = percent, LastPercentUtc = DateTime.UtcNow });
     }
 
     public static void SaveNotificationsEnabled(bool enabled)
