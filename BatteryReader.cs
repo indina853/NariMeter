@@ -149,9 +149,13 @@ public sealed class BatteryReader
 
     private HeadsetState BootstrapCharging(int percentRaw)
     {
-        int bucket = (percentRaw > 0 && percentRaw < 100)
-            ? (percentRaw / StepPercent) * StepPercent
-            : -1;
+        int bucket;
+        if (percentRaw >= 100)
+            bucket = 100;
+        else if (percentRaw > 0)
+            bucket = (percentRaw / StepPercent) * StepPercent;
+        else
+            bucket = -1;
 
         if (bucket < 0)
             return new HeadsetState(0, ChargeStatus.Charging);
