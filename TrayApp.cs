@@ -17,11 +17,11 @@ public sealed class TrayApp : ApplicationContext
     private readonly BatteryReader _reader;
     private readonly DeviceNotifier _notifier;
     private readonly System.Windows.Forms.Timer _timer;
-    private readonly Icon _iconHeadphone;
-    private readonly Icon _iconGreen;
-    private readonly Icon _iconYellow;
-    private readonly Icon _iconRed;
-    private readonly Icon _iconCharging;
+    private Icon? _iconHeadphone;
+    private Icon? _iconGreen;
+    private Icon? _iconYellow;
+    private Icon? _iconRed;
+    private Icon? _iconCharging;
 
     private HeadsetState _lastState = HeadsetState.Disconnected;
     private bool         _initialized = false;
@@ -38,12 +38,6 @@ public sealed class TrayApp : ApplicationContext
 
     public TrayApp()
     {
-        _iconHeadphone = LoadIcon("Headphone");
-        _iconGreen     = LoadIcon("BatteryGreen");
-        _iconYellow    = LoadIcon("BatteryYellow");
-        _iconRed       = LoadIcon("BatteryRed");
-        _iconCharging  = LoadIcon("BatteryCharging");
-
         _notificationsEnabled = StateStore.LoadNotificationsEnabled();
         _lowBatteryWarn       = StateStore.LoadLowBatteryWarn();
         _lowBatteryCrit       = StateStore.LoadLowBatteryCrit();
@@ -258,17 +252,19 @@ public sealed class TrayApp : ApplicationContext
 
     private Icon ResolveIcon(HeadsetState state)
     {
-        if (state.IsInactive) return _iconHeadphone;
+        if (state.IsInactive) return _iconHeadphone ??= LoadIcon("Headphone");
 
         return state.Status switch
         {
-            ChargeStatus.FullyCharged => _iconGreen,
-            ChargeStatus.Charging     => state.BatteryPercent >= 100 ? _iconGreen : _iconCharging,
+            ChargeStatus.FullyCharged => _iconGreen ??= LoadIcon("BatteryGreen"),
+            ChargeStatus.Charging     => state.BatteryPercent >= 100 
+                ? _iconGreen ??= LoadIcon("BatteryGreen") 
+                : _iconCharging ??= LoadIcon("BatteryCharging"),
             _ => state.BatteryPercent switch
             {
-                > 50 => _iconGreen,
-                > 20 => _iconYellow,
-                _    => _iconRed
+                > 50 => _iconGreen ??= LoadIcon("BatteryGreen"),
+                > 20 => _iconYellow ??= LoadIcon("BatteryYellow"),
+                _    => _iconRed ??= LoadIcon("BatteryRed")
             }
         };
     }
@@ -383,11 +379,11 @@ public sealed class TrayApp : ApplicationContext
             _timer.Dispose();
             _notifier.Dispose();
             UsbDevice.CloseDevice();
-            _iconHeadphone.Dispose();
-            _iconGreen.Dispose();
-            _iconYellow.Dispose();
-            _iconRed.Dispose();
-            _iconCharging.Dispose();
+            _iconHeadphone?.Dispose();
+            _iconGreen?.Dispose();
+            _iconYellow?.Dispose();
+            _iconRed?.Dispose();
+            _iconCharging?.Dispose();
             _tray.Dispose();
         }
         base.Dispose(disposing);
