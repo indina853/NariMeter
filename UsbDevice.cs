@@ -13,13 +13,13 @@ public static class UsbDevice
     private const int    IdleThreshold   = 4;
     private const int    ActiveThreshold = 4;
 
-    private static readonly byte[] SetData = new byte[64]
+    private static readonly byte[] SetData =
     {
         0xFF, 0x0A, 0x00, 0xFD, 0x04, 0x12, 0xF1, 0x02, 0x05,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
 
     private static readonly byte[] Response = new byte[64];
@@ -55,7 +55,7 @@ public static class UsbDevice
                 (byte)(UsbCtrlFlags.Direction_In | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
                 0x01, 0x03FF, (short)Interface, 64);
 
-            bool ok = _device.ControlTransfer(ref setupGet, Response, 64, out int transferred);
+            bool ok = _device.ControlTransfer(ref setupGet, Response, Response.Length, out int transferred);
             if (!ok || transferred < 15)
             {
                 CloseDevice();

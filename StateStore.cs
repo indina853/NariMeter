@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace NariMeter;
 
@@ -16,6 +17,13 @@ public static class StateStore
     private const int DefaultLowBatteryCrit = 10;
     private const int DefaultMinMv          = 3296;
     private const int DefaultMaxMv          = 4128;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
 
     private record PersistedState(
         int      LastValidPercent,
@@ -83,7 +91,10 @@ public static class StateStore
     {
         try
         {
-            File.WriteAllText(TempPath, JsonSerializer.Serialize(state));
+            using var stream = new FileStream(TempPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
+            JsonSerializer.Serialize(stream, state, JsonOptions);
+            stream.Flush();
+            stream.Close();
             File.Move(TempPath, FilePath, overwrite: true);
         }
         catch { }
@@ -94,7 +105,8 @@ public static class StateStore
         try
         {
             if (!File.Exists(FilePath)) return Default();
-            var loaded = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(FilePath));
+            using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+            var loaded = JsonSerializer.Deserialize<PersistedState>(stream, JsonOptions);
             if (loaded is null) return Default();
             return loaded with
             {
