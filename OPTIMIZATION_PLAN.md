@@ -378,43 +378,39 @@ Settings:
 
 **Tipo:** `perf/publish-optimization`
 
-**Issue:** Enable ReadyToRun and assembly trimming for smaller footprint
+**Issue:** Enable ReadyToRun for faster startup
 
 **Descrição da Issue:**
 ```
 ## Problem
 Project is configured with:
 - PublishReadyToRun=false
-- No assembly trimming enabled
 
 This results in:
 - Slower startup time
-- Larger executable size
-- Higher memory consumption
+- More runtime JIT compilation
 
 ## Impact
-- Unnecessary disk space usage
 - Slower application startup
-- More runtime JIT compilation
+- Unnecessary JIT overhead at runtime
 
 ## Proposed Changes
 - Enable PublishReadyToRun=true for faster startup
-- Enable PublishTrimmed=true to remove unused code
-- Configure TrimMode for optimal size/functionality balance
 - Test thoroughly to ensure no runtime errors
+
+## Note
+Assembly trimming (PublishTrimmed) is NOT compatible with Windows Forms applications and was removed from this optimization.
 ```
 
 **Branch:** `perf/publish-optimization`
 
-**PR Title:** Configure build for AOT compilation and unused code removal
+**PR Title:** Configure build for AOT compilation and faster startup
 
 **PR Description:**
 ```
 ## Changes
 - Enabled PublishReadyToRun=true for AOT compilation
-- Enabled PublishTrimmed=true to remove unused assemblies
-- Configured TrimMode=partial for safety
-- Added necessary TrimmerRootAssembly directives
+- Removed PublishTrimmed (incompatible with Windows Forms)
 
 ## Technical Details
 ReadyToRun (R2R):
@@ -422,29 +418,20 @@ ReadyToRun (R2R):
 - Reduces JIT overhead at startup
 - Improves startup time significantly
 
-Assembly Trimming:
-- Removes unused code from published app
-- Reduces executable size
-- Lower memory footprint
+**Why No Trimming:**
+Windows Forms applications are not compatible with assembly trimming. Attempting to enable PublishTrimmed results in build error NETSDK1175.
 
 ## Benefits
 - **Startup:** Faster application initialization
-- **Size:** Smaller executable (estimated 30-50% reduction)
-- **Memory:** Lower runtime memory consumption
-- **Performance:** Reduced JIT compilation overhead
+- **Performance:** Reduced JIT compilation overhead at startup
+- **Reliability:** No trimming-related runtime issues
 
 ## Testing
-- Verified all features work after trimming
+- Verified all features work correctly
 - Tested USB device communication
 - Confirmed tray icon and notifications work
 - Validated state persistence
-- No trim warnings or runtime errors
-
-## Notes
-If issues arise with LibUsbDotNet after trimming, specific assemblies can be excluded using:
-```xml
-<TrimmerRootAssembly Include="LibUsbDotNet" />
-```
+- Build succeeds without errors
 ```
 
 ---
