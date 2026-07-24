@@ -204,6 +204,10 @@ Currently using System.Windows.Forms.Timer. While appropriate for UI application
 
 **Branch:** `refactor/timer-optimization`
 
+**PR Title:** N/A - Optimization skipped
+
+**PR Description:** N/A - This optimization was evaluated and skipped. Windows Forms Timer is the correct choice for this UI scenario, as alternatives like System.Threading.Timer would require Invoke() to update the UI, adding unnecessary overhead.
+
 **Decisão:** **SKIP** - Windows Forms Timer é a escolha correta para este cenário de UI. Alternativas como System.Threading.Timer exigiriam Invoke() para atualizar UI, adicionando overhead.
 
 ---
