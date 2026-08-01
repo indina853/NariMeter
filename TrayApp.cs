@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace NariMeter;
@@ -13,15 +14,34 @@ public sealed class TrayApp : ApplicationContext
     private const int FirstReadingIntervalMs = 1000;
     private const int ActiveThreshold        = 4;
 
+    private const uint MF_String    = 0x0000;
+    private const uint MF_Check     = 0x0008;
+    private const uint MF_Popup     = 0x0010;
+    private const uint MF_Separator = 0x0800;
+
+    private const uint TpmReturnCmd   = 0x0100;
+    private const uint TpmNonotify    = 0x0080;
+    private const uint TpmRightButton = 0x0002;
+    private const uint TpmTopAlign    = 0x0000;
+    private const uint TpmBottomAlign = 0x0020;
+    private const uint WM_Null        = 0x0000;
+
+    private const int CmdStartup       = 1001;
+    private const int CmdNotify        = 1002;
+    private const int CmdExit          = 1099;
+    private const int WarnCmdBase      = 2000;
+    private const int CritCmdBase      = 3000;
+
     private readonly NotifyIcon _tray;
     private readonly BatteryReader _reader;
     private readonly DeviceNotifier _notifier;
     private readonly System.Windows.Forms.Timer _timer;
-    private Icon? _iconHeadphone;
-    private Icon? _iconGreen;
-    private Icon? _iconYellow;
-    private Icon? _iconRed;
-    private Icon? _iconCharging;
+    private readonly Icon _iconHeadphone;
+    private readonly Icon _iconGreen;
+    private readonly Icon _iconYellow;
+    private readonly Icon _iconRed;
+    private readonly Icon _iconCharging;
+    private readonly Form _menuAnchor;
 
     private HeadsetState _lastState = HeadsetState.Disconnected;
     private bool         _initialized = false;
@@ -34,7 +54,6 @@ public sealed class TrayApp : ApplicationContext
     private ChargeStatus _cachedStatus  = ChargeStatus.Discharging;
     private int          _lowBatteryWarn;
     private int          _lowBatteryCrit;
-    private ToolStripMenuItem _notifyToggle = null!;
 
     public TrayApp()
     {
@@ -46,13 +65,22 @@ public sealed class TrayApp : ApplicationContext
 
         _cachedPercent = _reader.NeedsFirstReading ? 0 : StateStore.LoadLastPercent();
 
+        _menuAnchor = new Form
+        {
+            ShowInTaskbar   = false,
+            FormBorderStyle = FormBorderStyle.None,
+            Location        = new Point(0, 0),
+            Size            = new Size(1, 1)
+        };
+        _ = _menuAnchor.Handle;
+
         _tray = new NotifyIcon
         {
-            Visible          = true,
-            Icon             = _iconHeadphone,
-            Text             = "Disconnected",
-            ContextMenuStrip = BuildMenu()
+            Visible = true,
+            Icon    = _iconHeadphone,
+            Text    = "Disconnected"
         };
+        _tray.MouseUp += OnTrayMouseUp;
 
         _notifier = new DeviceNotifier();
         _notifier.DeviceArrived += OnDeviceArrived;
@@ -250,6 +278,110 @@ public sealed class TrayApp : ApplicationContext
         _tray.Text = state.TooltipLine;
     }
 
+    private void OnTrayMouseUp(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Right) return;
+
+        var menu = BuildMenu();
+        try
+        {
+            SetForegroundWindow(_menuAnchor.Handle);
+
+            var work  = Screen.FromPoint(Cursor.Position).WorkingArea;
+            var flags = TpmReturnCmd | TpmNonotify | TpmRightButton |
+                        (Cursor.Position.Y + work.Height / 2 > work.Bottom
+                            ? TpmBottomAlign
+                            : TpmTopAlign);
+
+            var cmd = TrackPopupMenu(
+                menu,
+                flags,
+                Cursor.Position.X,
+                Cursor.Position.Y,
+                0,
+                _menuAnchor.Handle,
+                IntPtr.Zero);
+
+            PostMessage(_menuAnchor.Handle, WM_Null, UIntPtr.Zero, UIntPtr.Zero);
+
+            if (cmd != 0)
+                ExecuteMenuCommand(cmd);
+        }
+        finally
+        {
+            DestroyMenu(menu);
+        }
+    }
+
+    private IntPtr BuildMenu()
+    {
+        var menu     = CreatePopupMenu();
+        var warnMenu = CreatePopupMenu();
+        var critMenu = CreatePopupMenu();
+
+        AppendMenu(menu, StartupManager.IsEnabled() ? MF_String | MF_Check : MF_String, (UIntPtr)CmdStartup, "Run at Startup");
+        AppendMenu(menu, MF_Separator, UIntPtr.Zero, null);
+        AppendMenu(menu, _notificationsEnabled ? MF_String | MF_Check : MF_String, (UIntPtr)CmdNotify, "Show Notifications");
+        AppendMenu(menu, MF_String | MF_Popup, (UIntPtr)warnMenu, "Warn Threshold");
+        AppendMenu(menu, MF_String | MF_Popup, (UIntPtr)critMenu, "Crit Threshold");
+        AppendMenu(menu, MF_Separator, UIntPtr.Zero, null);
+        AppendMenu(menu, MF_String, (UIntPtr)CmdExit, "Exit");
+
+        foreach (var pct in new[] { 10, 15, 20, 25, 30 })
+            AppendMenu(warnMenu, pct == _lowBatteryWarn ? MF_String | MF_Check : MF_String, (UIntPtr)(WarnCmdBase + pct), $"{pct}%");
+
+        foreach (var pct in new[] { 5, 10, 15 })
+            AppendMenu(critMenu, pct == _lowBatteryCrit ? MF_String | MF_Check : MF_String, (UIntPtr)(CritCmdBase + pct), $"{pct}%");
+
+        return menu;
+    }
+
+    private void ExecuteMenuCommand(int cmd)
+    {
+        switch (cmd)
+        {
+            case CmdStartup:
+                if (StartupManager.IsEnabled()) StartupManager.Disable();
+                else StartupManager.Enable();
+                break;
+
+            case CmdNotify:
+                _notificationsEnabled = !_notificationsEnabled;
+                StateStore.SaveNotificationsEnabled(_notificationsEnabled);
+                break;
+
+            case CmdExit:
+                _tray.Visible = false;
+                Application.Exit();
+                break;
+
+            default:
+                if (cmd >= CritCmdBase)
+                {
+                    var p = cmd - CritCmdBase;
+                    if (p >= _lowBatteryWarn)
+                    {
+                        _lowBatteryWarn = p + 5 > 30 ? 30 : p + 5;
+                        StateStore.SaveLowBatteryWarn(_lowBatteryWarn);
+                    }
+                    _lowBatteryCrit = p;
+                    StateStore.SaveLowBatteryCrit(p);
+                }
+                else if (cmd >= WarnCmdBase)
+                {
+                    var p = cmd - WarnCmdBase;
+                    if (p <= _lowBatteryCrit)
+                    {
+                        _lowBatteryCrit = p - 5 < 5 ? 5 : p - 5;
+                        StateStore.SaveLowBatteryCrit(_lowBatteryCrit);
+                    }
+                    _lowBatteryWarn = p;
+                    StateStore.SaveLowBatteryWarn(p);
+                }
+                break;
+        }
+    }
+
     private Icon ResolveIcon(HeadsetState state)
     {
         if (state.IsInactive) return _iconHeadphone ??= LoadIcon("Headphone");
@@ -277,100 +409,23 @@ public sealed class TrayApp : ApplicationContext
         return new Icon(stream);
     }
 
-    private ContextMenuStrip BuildMenu()
-    {
-        var menu = new ContextMenuStrip();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreatePopupMenu();
 
-        _notifyToggle = new ToolStripMenuItem("Show Notifications")
-        {
-            Checked      = _notificationsEnabled,
-            CheckOnClick = true
-        };
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool AppendMenu(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string? lpNewItem);
 
-        _notifyToggle.Click += (_, _) =>
-        {
-            _notificationsEnabled = _notifyToggle.Checked;
-            StateStore.SaveNotificationsEnabled(_notificationsEnabled);
-        };
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int TrackPopupMenu(IntPtr hMenu, uint uFlags, int x, int y, int nReserved, IntPtr hwnd, IntPtr prcRect);
 
-        var startup = new ToolStripMenuItem("Run at Startup")
-        {
-            Checked      = StartupManager.IsEnabled(),
-            CheckOnClick = true
-        };
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        startup.Click += (_, _) =>
-        {
-            if (startup.Checked) StartupManager.Enable();
-            else StartupManager.Disable();
-        };
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, UIntPtr wParam, UIntPtr lParam);
 
-        var warnMenu = new ToolStripMenuItem("Warn Threshold");
-        var critMenu = new ToolStripMenuItem("Crit Threshold");
-
-        foreach (var pct in new[] { 10, 15, 20, 25, 30 })
-        {
-            var p    = pct;
-            var item = new ToolStripMenuItem($"{p}%") { Tag = p };
-            item.Click += (_, _) =>
-            {
-                if (p <= _lowBatteryCrit)
-                {
-                    _lowBatteryCrit = p - 5 < 5 ? 5 : p - 5;
-                    StateStore.SaveLowBatteryCrit(_lowBatteryCrit);
-                    RefreshThresholdMenu(critMenu, _lowBatteryCrit);
-                }
-                _lowBatteryWarn = p;
-                StateStore.SaveLowBatteryWarn(p);
-                RefreshThresholdMenu(warnMenu, p);
-            };
-            item.Checked = p == _lowBatteryWarn;
-            warnMenu.DropDownItems.Add(item);
-        }
-
-        foreach (var pct in new[] { 5, 10, 15 })
-        {
-            var p    = pct;
-            var item = new ToolStripMenuItem($"{p}%") { Tag = p };
-            item.Click += (_, _) =>
-            {
-                if (p >= _lowBatteryWarn)
-                {
-                    _lowBatteryWarn = p + 5 > 30 ? 30 : p + 5;
-                    StateStore.SaveLowBatteryWarn(_lowBatteryWarn);
-                    RefreshThresholdMenu(warnMenu, _lowBatteryWarn);
-                }
-                _lowBatteryCrit = p;
-                StateStore.SaveLowBatteryCrit(p);
-                RefreshThresholdMenu(critMenu, p);
-            };
-            item.Checked = p == _lowBatteryCrit;
-            critMenu.DropDownItems.Add(item);
-        }
-
-        var exit = new ToolStripMenuItem("Exit");
-        exit.Click += (_, _) =>
-        {
-            _tray.Visible = false;
-            Application.Exit();
-        };
-
-        menu.Items.Add(startup);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_notifyToggle);
-        menu.Items.Add(warnMenu);
-        menu.Items.Add(critMenu);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(exit);
-
-        return menu;
-    }
-
-    private static void RefreshThresholdMenu(ToolStripMenuItem menu, int selected)
-    {
-        foreach (ToolStripMenuItem item in menu.DropDownItems)
-            item.Checked = (int)item.Tag! == selected;
-    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool DestroyMenu(IntPtr hMenu);
 
     protected override void Dispose(bool disposing)
     {
@@ -379,11 +434,12 @@ public sealed class TrayApp : ApplicationContext
             _timer.Dispose();
             _notifier.Dispose();
             UsbDevice.CloseDevice();
-            _iconHeadphone?.Dispose();
-            _iconGreen?.Dispose();
-            _iconYellow?.Dispose();
-            _iconRed?.Dispose();
-            _iconCharging?.Dispose();
+            _iconHeadphone.Dispose();
+            _iconGreen.Dispose();
+            _iconYellow.Dispose();
+            _iconRed.Dispose();
+            _iconCharging.Dispose();
+            _menuAnchor.Dispose();
             _tray.Dispose();
         }
         base.Dispose(disposing);
