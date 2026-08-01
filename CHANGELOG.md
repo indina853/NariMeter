@@ -4,6 +4,19 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.4] — 2026-08-01
+
+### Changed
+- Tray context menu replaced with native Win32 popup menu (`TrackPopupMenu`), replacing the WinForms `ContextMenuStrip`
+- Tray popup now dismisses when clicking outside it
+- Tray popup alignment now follows the click position instead of the taskbar icon bounds
+- Publish output path no longer appends a duplicate `win-x64` suffix (RID kept as `win-x64`)
+
+### Performance
+- RAM usage (Task Manager "Memory" column): peaks at ~8 MB, settles at ~5 MB steady state
+
+---
+
 ## [v1.4.3] — 2026-08-01
 
 ### Fixed
