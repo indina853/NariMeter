@@ -10,7 +10,10 @@ public static class UsbDevice
     private const int IdleThreshold   = 4;
     private const int ActiveThreshold = 4;
 
-    private static readonly byte[] SetData =
+    private const int ErrorInsufficientBuffer = 122;
+    private const int DevicePathOffset        = 4;
+
+    private static readonly byte[] SetData = new byte[64]
     {
         0xFF, 0x0A, 0x00, 0xFD, 0x04, 0x12, 0xF1, 0x02, 0x05,
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -41,6 +44,8 @@ public static class UsbDevice
         try
         {
             if (!EnsureOpen()) return false;
+
+            Response[0] = 0xFF;
 
             if (!HidD_SetFeature(_deviceHandle, SetData, (uint)SetData.Length) ||
                 !HidD_GetFeature(_deviceHandle, Response, (uint)Response.Length))
@@ -113,7 +118,10 @@ public static class UsbDevice
             for (uint index = 0; SetupDiEnumDeviceInterfaces(infoSet, IntPtr.Zero, ref hidGuid, index, ref ifaceData); index++)
             {
                 if (!SetupDiGetDeviceInterfaceDetail(infoSet, ref ifaceData, IntPtr.Zero, 0, out uint required, IntPtr.Zero))
-                    continue;
+                {
+                    if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer)
+                        continue;
+                }
 
                 IntPtr detail = Marshal.AllocHGlobal((int)required);
                 try
@@ -122,10 +130,11 @@ public static class UsbDevice
                     if (!SetupDiGetDeviceInterfaceDetail(infoSet, ref ifaceData, detail, required, out _, IntPtr.Zero))
                         continue;
 
-                    string? path = Marshal.PtrToStringAuto((IntPtr)(detail.ToInt64() + DetailDataSize));
+                    string? path = Marshal.PtrToStringAuto((IntPtr)(detail.ToInt64() + DevicePathOffset));
                     if (string.IsNullOrEmpty(path)) continue;
                     if (!path.Contains("vid_1532&pid_051c", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!path.Contains("mi_05", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!path.Contains("col03", StringComparison.OrdinalIgnoreCase)) continue;
 
                     IntPtr handle = CreateFile(path, GenericRead | GenericWrite, FileShareRead | FileShareWrite,
                                                IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
@@ -182,7 +191,7 @@ public static class UsbDevice
 
     private static readonly Guid HidGuid = new("4D1E55B2-F16F-11CF-88CB-001111000030");
 
-    private static uint DetailDataSize => (uint)(IntPtr.Size == 8 ? 8 : 6);
+    private static uint DetailDataSize => (uint)(IntPtr.Size == 8 ? 8 : 4);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct HIDD_ATTRIBUTES
