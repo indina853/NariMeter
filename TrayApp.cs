@@ -22,6 +22,8 @@ public sealed class TrayApp : ApplicationContext
     private const uint TpmReturnCmd   = 0x0100;
     private const uint TpmNonotify    = 0x0080;
     private const uint TpmRightButton = 0x0002;
+    private const uint TpmTopAlign    = 0x0000;
+    private const uint TpmBottomAlign = 0x0020;
     private const uint WM_Null        = 0x0000;
 
     private const int CmdStartup       = 1001;
@@ -291,9 +293,15 @@ public sealed class TrayApp : ApplicationContext
         {
             SetForegroundWindow(_menuAnchor.Handle);
 
+            var work  = Screen.FromPoint(Cursor.Position).WorkingArea;
+            var flags = TpmReturnCmd | TpmNonotify | TpmRightButton |
+                        (Cursor.Position.Y + work.Height / 2 > work.Bottom
+                            ? TpmBottomAlign
+                            : TpmTopAlign);
+
             var cmd = TrackPopupMenu(
                 menu,
-                TpmReturnCmd | TpmNonotify | TpmRightButton,
+                flags,
                 Cursor.Position.X,
                 Cursor.Position.Y,
                 0,
