@@ -1,4 +1,4 @@
-using LibUsbDotNet;
+using LibUsbDotNet.LibUsb;
 using LibUsbDotNet.Main;
 
 namespace NariMeter;
@@ -24,7 +24,8 @@ public static class UsbDevice
 
     private static readonly byte[] Response = new byte[64];
 
-    private static LibUsbDotNet.UsbDevice? _device;
+    private static UsbContext? _context;
+    private static IUsbDevice? _device;
 
     private static int  _idleCount   = 0;
     private static int  _activeCount = 0;
@@ -48,15 +49,15 @@ public static class UsbDevice
 
             var setupSet = new UsbSetupPacket(
                 (byte)(UsbCtrlFlags.Direction_Out | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
-                0x09, 0x03FF, (short)Interface, (short)SetData.Length);
-            _device!.ControlTransfer(ref setupSet, SetData, SetData.Length, out _);
+                0x09, 0x03FF, Interface, SetData.Length);
+            _device!.ControlTransfer(setupSet, SetData, 0, SetData.Length);
 
             var setupGet = new UsbSetupPacket(
                 (byte)(UsbCtrlFlags.Direction_In | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
-                0x01, 0x03FF, (short)Interface, 64);
+                0x01, 0x03FF, Interface, 64);
 
-            bool ok = _device.ControlTransfer(ref setupGet, Response, Response.Length, out int transferred);
-            if (!ok || transferred < 15)
+            int transferred = _device.ControlTransfer(setupGet, Response, 0, 64);
+            if (transferred < 15)
             {
                 CloseDevice();
                 return false;
@@ -104,13 +105,12 @@ public static class UsbDevice
 
         CloseDevice();
 
-        var finder = new UsbDeviceFinder(VendorId, ProductId);
-        _device = LibUsbDotNet.UsbDevice.OpenUsbDevice(finder);
-        if (_device == null) return false;
+        _context ??= new UsbContext();
+        var finder = new UsbDeviceFinder { Vid = VendorId, Pid = ProductId };
+        _device = _context.Find(finder);
+        if (_device == null || !_device.TryOpen()) return false;
 
-        if (_device is IUsbDevice wholeDevice)
-            wholeDevice.ClaimInterface(Interface);
-
+        _device.ClaimInterface(Interface);
         return true;
     }
 
@@ -120,13 +120,14 @@ public static class UsbDevice
 
         try
         {
-            if (_device is IUsbDevice wd) wd.ReleaseInterface(Interface);
+            _device.ReleaseInterface(Interface);
             _device.Close();
-            LibUsbDotNet.UsbDevice.Exit();
         }
         catch { }
 
         _device = null;
+        _context?.Dispose();
+        _context = null;
     }
 
     public static void Reset()

@@ -5,7 +5,7 @@
 A lightweight Windows system tray application that displays the **real-time battery level** of the Razer Nari wireless headset — built entirely through USB protocol reverse engineering, with zero dependency on Razer software.
 
 ![Windows 10+](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![.NET 8](https://img.shields.io/badge/.NET-8.0-purple?logo=dotnet)
+![.NET 10](https://img.shields.io/badge/.NET-10.0-purple?logo=dotnet)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 ![Portable](https://img.shields.io/badge/portable-yes-brightgreen)
 
@@ -56,19 +56,19 @@ NariMeter answers that question with a glanceable tray icon, ~621 KB on disk, an
 ## Requirements
 
 - Windows 10 or later (x64)
-- [.NET 8 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime) — required, free, one-click install
+- [.NET 10 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) — required, free, one-click install
 - Razer Nari wireless headset with USB dongle connected
 - WinUSB driver installed on Interface 5 of the dongle (see setup below)
 
-> **For developers building from source:** [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) is required instead of the runtime.
+> **For developers building from source:** [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) is required instead of the runtime.
 
 ---
 
 ## Setup
 
-### 1. Install the .NET 8 Runtime
+### 1. Install the .NET 10 Runtime
 
-Download and run the installer from [dotnet.microsoft.com](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime). Many users will already have this installed.
+Download and run the installer from [dotnet.microsoft.com](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime). Many users will already have this installed.
 
 ### 2. Install the WinUSB driver
 
@@ -217,7 +217,7 @@ Warn and critical thresholds are configurable independently via the right-click 
 
 ## Building from Source
 
-**Requires:** .NET 8 SDK
+**Requires:** .NET 10 SDK
 
 ```bash
 git clone https://github.com/indina853/NariMeter.git
@@ -231,9 +231,9 @@ dotnet build
 dotnet publish -c Release
 ```
 
-Output: `bin\Release\net8.0-windows\win-x64\publish\NariMeter.exe`
+Output: `bin\Release\net10.0-windows\win-x64\publish\NariMeter.exe`
 
-> The published executable requires the [.NET 8 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime) on the target machine.
+> The published executable requires the [.NET 10 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) on the target machine.
 
 ---
 
