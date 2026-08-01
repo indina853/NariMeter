@@ -4,6 +4,18 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.2] — 2026-08-01
+
+### Changed
+- Replaced LibUsbDotNet USB stack with native Windows HID API (`hid.dll` + `setupapi.dll`) via P/Invoke
+- No WinUSB driver installation required anymore — NariMeter now uses the standard Windows HID driver (`hidusb.sys`) directly on Interface 5
+- Open device enumeration (SetupAPI) filters by `vid_1532&pid_051c` and `mi_05`, matching the interface that answers Feature Report 0xFF
+- Set/Get Feature reports now use the HID API equivalent of the captured USB control transfers (`SET_REPORT`/`GET_REPORT`, wValue `0x03FF`, wIndex 5)
+- README: removed the entire Zadig/WinUSB section and updated requirements
+- Version bumped to 1.4.2
+
+---
+
 ## [v1.4.1] — 2026-08-01
 
 ### Changed

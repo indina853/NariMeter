@@ -1,31 +1,26 @@
-using LibUsbDotNet.LibUsb;
-using LibUsbDotNet.Main;
+using System.Runtime.InteropServices;
 
 namespace NariMeter;
 
 public static class UsbDevice
 {
-    public  const string DeviceName      = "Razer Nari";
-    public  const string HardwareId      = "VID_1532&PID_051C";
-    private const int    VendorId        = 0x1532;
-    private const int    ProductId       = 0x051C;
-    private const int    Interface       = 5;
-    private const int    IdleThreshold   = 4;
-    private const int    ActiveThreshold = 4;
+    public  const string DeviceName = "Razer Nari";
+    public  const string HardwareId = "VID_1532&PID_051C";
+
+    private const int IdleThreshold   = 4;
+    private const int ActiveThreshold = 4;
 
     private static readonly byte[] SetData = new byte[64]
     {
         0xFF, 0x0A, 0x00, 0xFD, 0x04, 0x12, 0xF1, 0x02, 0x05,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0,0,0,0
     };
 
     private static readonly byte[] Response = new byte[64];
 
-    private static UsbContext? _context;
-    private static IUsbDevice? _device;
+    private static IntPtr _deviceHandle = IntPtr.Zero;
 
     private static int  _idleCount   = 0;
     private static int  _activeCount = 0;
@@ -47,17 +42,14 @@ public static class UsbDevice
         {
             if (!EnsureOpen()) return false;
 
-            var setupSet = new UsbSetupPacket(
-                (byte)(UsbCtrlFlags.Direction_Out | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
-                0x09, 0x03FF, Interface, SetData.Length);
-            _device!.ControlTransfer(setupSet, SetData, 0, SetData.Length);
+            if (!HidD_SetFeature(_deviceHandle, SetData, (uint)SetData.Length) ||
+                !HidD_GetFeature(_deviceHandle, Response, (uint)Response.Length))
+            {
+                CloseDevice();
+                return false;
+            }
 
-            var setupGet = new UsbSetupPacket(
-                (byte)(UsbCtrlFlags.Direction_In | UsbCtrlFlags.RequestType_Class | UsbCtrlFlags.Recipient_Interface),
-                0x01, 0x03FF, Interface, 64);
-
-            int transferred = _device.ControlTransfer(setupGet, Response, 0, 64);
-            if (transferred < 15)
+            if (Response[0] != 0xFF)
             {
                 CloseDevice();
                 return false;
@@ -101,33 +93,73 @@ public static class UsbDevice
 
     private static bool EnsureOpen()
     {
-        if (_device is { IsOpen: true }) return true;
+        if (_deviceHandle != IntPtr.Zero) return true;
 
         CloseDevice();
+        _deviceHandle = OpenNariDevice();
+        return _deviceHandle != IntPtr.Zero;
+    }
 
-        _context ??= new UsbContext();
-        var finder = new UsbDeviceFinder { Vid = VendorId, Pid = ProductId };
-        _device = _context.Find(finder);
-        if (_device == null || !_device.TryOpen()) return false;
+    private static IntPtr OpenNariDevice()
+    {
+        Guid hidGuid = HidGuid;
+        IntPtr infoSet = SetupDiGetClassDevs(ref hidGuid, IntPtr.Zero, IntPtr.Zero, DigcfPresent | DigcfDeviceInterface);
+        if (infoSet == InvalidHandleValue) return IntPtr.Zero;
 
-        _device.ClaimInterface(Interface);
-        return true;
+        try
+        {
+            var ifaceData = new SP_DEVICE_INTERFACE_DATA { cbSize = (uint)Marshal.SizeOf<SP_DEVICE_INTERFACE_DATA>() };
+
+            for (uint index = 0; SetupDiEnumDeviceInterfaces(infoSet, IntPtr.Zero, ref hidGuid, index, ref ifaceData); index++)
+            {
+                if (!SetupDiGetDeviceInterfaceDetail(infoSet, ref ifaceData, IntPtr.Zero, 0, out uint required, IntPtr.Zero))
+                    continue;
+
+                IntPtr detail = Marshal.AllocHGlobal((int)required);
+                try
+                {
+                    Marshal.WriteInt32(detail, (int)DetailDataSize);
+                    if (!SetupDiGetDeviceInterfaceDetail(infoSet, ref ifaceData, detail, required, out _, IntPtr.Zero))
+                        continue;
+
+                    string? path = Marshal.PtrToStringAuto((IntPtr)(detail.ToInt64() + DetailDataSize));
+                    if (string.IsNullOrEmpty(path)) continue;
+                    if (!path.Contains("vid_1532&pid_051c", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!path.Contains("mi_05", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    IntPtr handle = CreateFile(path, GenericRead | GenericWrite, FileShareRead | FileShareWrite,
+                                               IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+                    if (handle == InvalidHandleValue) continue;
+
+                    var attrs = new HIDD_ATTRIBUTES { Size = (uint)Marshal.SizeOf<HIDD_ATTRIBUTES>() };
+                    if (HidD_GetAttributes(handle, ref attrs) &&
+                        attrs.VendorID == 0x1532 && attrs.ProductID == 0x051C)
+                    {
+                        return handle;
+                    }
+
+                    CloseHandle(handle);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(detail);
+                }
+            }
+
+            return IntPtr.Zero;
+        }
+        finally
+        {
+            SetupDiDestroyDeviceInfoList(infoSet);
+        }
     }
 
     public static void CloseDevice()
     {
-        if (_device == null) return;
+        if (_deviceHandle == IntPtr.Zero) return;
 
-        try
-        {
-            _device.ReleaseInterface(Interface);
-            _device.Close();
-        }
-        catch { }
-
-        _device = null;
-        _context?.Dispose();
-        _context = null;
+        CloseHandle(_deviceHandle);
+        _deviceHandle = IntPtr.Zero;
     }
 
     public static void Reset()
@@ -137,4 +169,70 @@ public static class UsbDevice
         _initialized = false;
         _poweredOn   = false;
     }
+
+    private const uint GenericRead   = 0x80000000;
+    private const uint GenericWrite  = 0x40000000;
+    private const uint FileShareRead = 0x00000001;
+    private const uint FileShareWrite = 0x00000002;
+    private const uint OpenExisting  = 3;
+    private const uint DigcfPresent  = 0x00000002;
+    private const uint DigcfDeviceInterface = 0x00000010;
+
+    private static readonly IntPtr InvalidHandleValue = new(-1);
+
+    private static readonly Guid HidGuid = new("4D1E55B2-F16F-11CF-88CB-001111000030");
+
+    private static uint DetailDataSize => (uint)(IntPtr.Size == 8 ? 8 : 6);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HIDD_ATTRIBUTES
+    {
+        public uint Size;
+        public ushort VendorID;
+        public ushort ProductID;
+        public ushort VersionNumber;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SP_DEVICE_INTERFACE_DATA
+    {
+        public uint cbSize;
+        public Guid InterfaceClassGuid;
+        public uint Flags;
+        public IntPtr Reserved;
+    }
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetupDiGetClassDevs(ref Guid classGuid, IntPtr enumerator, IntPtr hwndParent, uint flags);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiEnumDeviceInterfaces(IntPtr deviceInfoSet, IntPtr deviceInfoData, ref Guid interfaceClassGuid, uint memberIndex, ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr deviceInfoSet, ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData, IntPtr deviceInterfaceDetailData, uint deviceInterfaceDetailDataSize, out uint requiredSize, IntPtr deviceInfoData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CreateFile(string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool HidD_GetAttributes(IntPtr hidDeviceObject, ref HIDD_ATTRIBUTES attributes);
+
+    [DllImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool HidD_SetFeature(IntPtr hidDeviceObject, byte[] reportBuffer, uint reportBufferLength);
+
+    [DllImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool HidD_GetFeature(IntPtr hidDeviceObject, byte[] reportBuffer, uint reportBufferLength);
 }
