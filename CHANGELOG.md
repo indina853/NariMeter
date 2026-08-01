@@ -4,6 +4,15 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.1] — 2026-08-01
+
+### Changed
+- Upgraded target framework from `net8.0-windows` to `net10.0-windows`
+- LibUsbDotNet updated from 2.2.85 to 3.0.224, migrated to its new context-based API (`UsbContext` + `Find`, control transfer returning transferred bytes)
+- Version bumped to 1.4.1
+
+---
+
 ## [v1.3.0] — 2026-07-15
 
 ### Added
