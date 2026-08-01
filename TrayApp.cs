@@ -57,12 +57,6 @@ public sealed class TrayApp : ApplicationContext
 
     public TrayApp()
     {
-        _iconHeadphone = LoadIcon("Headphone");
-        _iconGreen     = LoadIcon("BatteryGreen");
-        _iconYellow    = LoadIcon("BatteryYellow");
-        _iconRed       = LoadIcon("BatteryRed");
-        _iconCharging  = LoadIcon("BatteryCharging");
-
         _notificationsEnabled = StateStore.LoadNotificationsEnabled();
         _lowBatteryWarn       = StateStore.LoadLowBatteryWarn();
         _lowBatteryCrit       = StateStore.LoadLowBatteryCrit();
@@ -390,17 +384,19 @@ public sealed class TrayApp : ApplicationContext
 
     private Icon ResolveIcon(HeadsetState state)
     {
-        if (state.IsInactive) return _iconHeadphone;
+        if (state.IsInactive) return _iconHeadphone ??= LoadIcon("Headphone");
 
         return state.Status switch
         {
-            ChargeStatus.FullyCharged => _iconGreen,
-            ChargeStatus.Charging     => state.BatteryPercent >= 100 ? _iconGreen : _iconCharging,
+            ChargeStatus.FullyCharged => _iconGreen ??= LoadIcon("BatteryGreen"),
+            ChargeStatus.Charging     => state.BatteryPercent >= 100 
+                ? _iconGreen ??= LoadIcon("BatteryGreen") 
+                : _iconCharging ??= LoadIcon("BatteryCharging"),
             _ => state.BatteryPercent switch
             {
-                > 50 => _iconGreen,
-                > 20 => _iconYellow,
-                _    => _iconRed
+                > 50 => _iconGreen ??= LoadIcon("BatteryGreen"),
+                > 20 => _iconYellow ??= LoadIcon("BatteryYellow"),
+                _    => _iconRed ??= LoadIcon("BatteryRed")
             }
         };
     }
