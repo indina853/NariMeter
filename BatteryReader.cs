@@ -4,11 +4,12 @@ namespace NariMeter;
 
 public sealed class BatteryReader
 {
-    private const int ConfirmTicks        = 2;
-    private const int StepPercent         = 5;
-    private const int StepIntervalSeconds = 30;
-    private const int SanityThreshold     = 40;
-    private const int MaxChargingPercent  = 95;
+    private const int ConfirmTicks          = 2;
+    private const int RechargeConfirmTicks  = 2;
+    private const int StepPercent           = 5;
+    private const int StepIntervalSeconds   = 30;
+    private const int SanityThreshold       = 40;
+    private const int MaxChargingPercent    = 95;
 
     private const int StaleCacheMinutes   = 30;
     private const int CalibrationLowPct   = 5;
@@ -31,6 +32,7 @@ public sealed class BatteryReader
     private bool     _wasCharging;
     private bool     _chargingJustStarted;
     private bool     _fullyCharged;
+    private int      _rechargeConfirmTicks;
     private ChargeStatus _lastChargeStatus     = ChargeStatus.Discharging;
 
     private int _minMv;
@@ -74,7 +76,26 @@ public sealed class BatteryReader
         var now = DateTime.UtcNow;
 
         if (now < _stabilizeUntil)
+        {
+            if (isCharging)
+            {
+                if (++_rechargeConfirmTicks >= RechargeConfirmTicks)
+                {
+                    _stabilizeUntil       = DateTime.MinValue;
+                    _rechargeConfirmTicks = 0;
+                    _dischargeSince       = DateTime.MaxValue;
+                    _wasCharging          = true;
+                    _chargingJustStarted  = true;
+                    return HandleCharging(percentRaw, now);
+                }
+            }
+            else
+            {
+                _rechargeConfirmTicks = 0;
+            }
+
             return new HeadsetState(_lastValidPercent, _lastChargeStatus);
+        }
 
         if (isCharging)
         {
@@ -260,8 +281,9 @@ public sealed class BatteryReader
 
     public void NotifyCableRemoved()
     {
-        _stabilizeUntil   = DateTime.UtcNow + StabilizationHold;
-        _lastChargeStatus = ChargeStatus.Discharging;
+        _stabilizeUntil       = DateTime.UtcNow + StabilizationHold;
+        _rechargeConfirmTicks = 0;
+        _lastChargeStatus     = ChargeStatus.Discharging;
     }
 
     private void TryCalibrate(int mv, int pct)

@@ -19,7 +19,7 @@ Synapse installs a constellation of background services — `RazerNahimic`, `Raz
 
 The interface itself buries the battery indicator under multiple clicks inside a large, slow-loading overlay. For a single piece of information — *how much battery does my headset have?* — the friction is remarkable.
 
-NariMeter answers that question with a glanceable tray icon, ~621 KB on disk, and no network activity whatsoever.
+NariMeter answers that question with a glanceable tray icon, ~204 KB on disk, and no network activity whatsoever.
 
 ---
 
@@ -57,8 +57,7 @@ NariMeter answers that question with a glanceable tray icon, ~621 KB on disk, an
 
 - Windows 10 or later (x64)
 - [.NET 10 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) — required, free, one-click install
-- Razer Nari wireless headset with USB dongle connected
-- WinUSB driver installed on Interface 5 of the dongle (see setup below)
+- Razer Nari wireless headset with USB dongle connected. **No additional driver installation required** — NariMeter uses the standard Windows HID driver (`hidusb.sys`).
 
 > **For developers building from source:** [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) is required instead of the runtime.
 
@@ -70,19 +69,7 @@ NariMeter answers that question with a glanceable tray icon, ~621 KB on disk, an
 
 Download and run the installer from [dotnet.microsoft.com](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime). Many users will already have this installed.
 
-### 2. Install the WinUSB driver
-
-NariMeter communicates with the Nari dongle at the USB protocol level, bypassing Razer's driver stack entirely. For this to work, the WinUSB generic driver must be bound to **Interface 5** of the dongle.
-
-1. Download and run [Zadig](https://zadig.akeo.ie/)
-2. In the menu, select **Options → List All Devices**
-3. Locate `Razer Nari` in the dropdown — select the entry corresponding to **Interface 5**
-4. Set the target driver to **WinUSB**
-5. Click **Replace Driver**
-
-> This does not affect the headset's audio functionality. Only the HID interface used for battery reporting is replaced. Razer Synapse will lose the ability to communicate with the dongle on this interface, which is entirely the point.
-
-### 3. Run NariMeter
+### 2. Run NariMeter
 
 Download `NariMeter.exe` from the [Releases](../../releases) page and run it. No installation required. The tray icon will appear within a few seconds of the dongle being recognized.
 
@@ -105,6 +92,8 @@ Interface:  5
 ```
 
 Interface 5 is the HID interface responsible for device status reporting, separate from the audio and standard HID interfaces used for button input.
+
+Inside `mi_05`, the battery Feature Report is exposed only by the `col03` collection (UsagePage `0xFF00`) — the other collections (`col01`/`col02`) expose no Feature Reports, so communication targets `col03` exclusively.
 
 ### Step 2 — Capturing the handshake
 
@@ -192,7 +181,7 @@ Program.cs
 └── TrayApp.cs           — ApplicationContext, adaptive timer, tray icon management
     ├── BatteryReader.cs — Charge state logic, stabilization, state persistence
     ├── DeviceNotifier.cs — Native USB connect/disconnect detection via WM_DEVICECHANGE
-    ├── UsbDevice.cs     — USB HID control transfers, persistent device handle
+    ├── UsbDevice.cs     — Native Windows HID API (hid.dll/setupapi), persistent device handle
     ├── HeadsetState.cs  — Immutable state record, ChargeStatus enum, tooltip formatting
     ├── StateStore.cs    — JSON persistence of last known percentage, timestamp, and calibrated mV bounds
     └── StartupManager.cs — Windows registry autostart toggle (HKCU\...\Run)
@@ -241,8 +230,8 @@ Output: `bin\Release\net10.0-windows\win-x64\publish\NariMeter.exe`
 
 | Metric | Value |
 |---|---|
-| Executable size | ~621 KB |
-| RAM usage (steady state) | ~9-11 MB (optimized) |
+| Executable size | ~204 KB |
+| RAM usage (steady state) | ~15 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
 | Disk writes | Only on battery % change and settings updates |
@@ -261,7 +250,7 @@ NariMeter/
 ├── StartupManager.cs      — Run at startup via Windows registry
 ├── StateStore.cs          — Battery % and settings persistence (JSON)
 ├── TrayApp.cs             — Tray icon, timers, notifications, menu
-├── UsbDevice.cs           — USB HID communication layer
+├── UsbDevice.cs           — Native Windows HID API communication layer (no driver install required)
 ├── App.ico                — Application icon (task manager, Explorer)
 ├── Headphone.ico          — Tray: powered off / disconnected state
 ├── BatteryGreen.ico       — Tray: battery > 50% or fully charged

@@ -11,9 +11,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <AssemblyVersion>1.4.1</AssemblyVersion>
-    <FileVersion>1.4.1</FileVersion>
-    <Version>1.4.1</Version>
+    <AssemblyVersion>1.4.3</AssemblyVersion>
+    <FileVersion>1.4.3</FileVersion>
+    <Version>1.4.3</Version>
     <Product>NariMeter</Product>
     <Copyright>Copyright © 2026 Klaus Klein</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -29,10 +29,6 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="LibUsbDotNet" Version="3.0.224" />
-  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Headphone.ico" />
