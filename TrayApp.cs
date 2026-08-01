@@ -36,11 +36,11 @@ public sealed class TrayApp : ApplicationContext
     private readonly BatteryReader _reader;
     private readonly DeviceNotifier _notifier;
     private readonly System.Windows.Forms.Timer _timer;
-    private readonly Icon _iconHeadphone;
-    private readonly Icon _iconGreen;
-    private readonly Icon _iconYellow;
-    private readonly Icon _iconRed;
-    private readonly Icon _iconCharging;
+    private Icon? _iconHeadphone;
+    private Icon? _iconGreen;
+    private Icon? _iconYellow;
+    private Icon? _iconRed;
+    private Icon? _iconCharging;
     private readonly Form _menuAnchor;
 
     private HeadsetState _lastState = HeadsetState.Disconnected;
@@ -434,11 +434,11 @@ public sealed class TrayApp : ApplicationContext
             _timer.Dispose();
             _notifier.Dispose();
             UsbDevice.CloseDevice();
-            _iconHeadphone.Dispose();
-            _iconGreen.Dispose();
-            _iconYellow.Dispose();
-            _iconRed.Dispose();
-            _iconCharging.Dispose();
+            _iconHeadphone?.Dispose();
+            _iconGreen?.Dispose();
+            _iconYellow?.Dispose();
+            _iconRed?.Dispose();
+            _iconCharging?.Dispose();
             _menuAnchor.Dispose();
             _tray.Dispose();
         }
