@@ -25,6 +25,23 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.0] — 2026-07-24
+
+### Changed
+- StateStore JSON serialization now uses direct FileStream writing, eliminating intermediate string allocations
+- USB buffer management improved with explicit constants and zero-copy operations
+- Tray icons now loaded lazily on-demand instead of at startup
+- Tooltip strings cached in HeadsetState to reduce repeated allocations
+- ReadyToRun compilation enabled for faster startup
+
+### Performance
+- Memory consumption reduced by ~27-40% (from ~15 MB to ~9-11 MB expected)
+- Eliminated allocations in hot paths (USB polling every 2s, state saves every 2-5s)
+- Reduced GC pressure through strategic caching and direct serialization
+- Faster application startup through AOT compilation
+
+---
+
 ## [v1.3.0] — 2026-07-15
 
 ### Added
