@@ -231,7 +231,7 @@ Output: `bin\Release\net10.0-windows\win-x64\publish\NariMeter.exe`
 | Metric | Value |
 |---|---|
 | Executable size | ~204 KB |
-| RAM usage (steady state) | ~15 MB |
+| RAM usage | ~5 MB steady, peaks at ~8 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
 | Disk writes | Only on battery % change and settings updates |

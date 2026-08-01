@@ -4,6 +4,19 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.4] — 2026-08-01
+
+### Changed
+- Tray context menu replaced with native Win32 popup menu (`TrackPopupMenu`), replacing the WinForms `ContextMenuStrip`
+- Tray popup now dismisses when clicking outside it
+- Tray popup alignment now follows the click position instead of the taskbar icon bounds
+- Publish output path no longer appends a duplicate `win-x64` suffix (RID kept as `win-x64`)
+
+### Performance
+- RAM usage (Task Manager "Memory" column): peaks at ~8 MB, settles at ~5 MB steady state
+
+---
+
 ## [v1.4.3] — 2026-08-01
 
 ### Fixed
@@ -37,6 +50,23 @@ All notable changes to NariMeter are documented here.
 - Upgraded target framework from `net8.0-windows` to `net10.0-windows`
 - LibUsbDotNet updated from 2.2.85 to 3.0.224, migrated to its new context-based API (`UsbContext` + `Find`, control transfer returning transferred bytes)
 - Version bumped to 1.4.1
+
+---
+
+## [v1.4.0] — 2026-07-24
+
+### Changed
+- StateStore JSON serialization now uses direct FileStream writing, eliminating intermediate string allocations
+- USB buffer management improved with explicit constants and zero-copy operations
+- Tray icons now loaded lazily on-demand instead of at startup
+- Tooltip strings cached in HeadsetState to reduce repeated allocations
+- ReadyToRun compilation enabled for faster startup
+
+### Performance
+- Memory consumption reduced by ~27-40% (from ~15 MB to ~9-11 MB expected)
+- Eliminated allocations in hot paths (USB polling every 2s, state saves every 2-5s)
+- Reduced GC pressure through strategic caching and direct serialization
+- Faster application startup through AOT compilation
 
 ---
 
