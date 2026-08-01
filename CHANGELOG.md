@@ -4,6 +4,21 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.3] — 2026-08-01
+
+### Fixed
+- `UsbDevice`: device enumeration now targets the `mi_05`/`col03` HID collection (UsagePage `0xFF00`) — the only collection exposing Feature Reports; `col01`/`col02` expose none
+- `UsbDevice`: `ERROR_INSUFFICIENT_BUFFER` (122) from `SetupDiGetDeviceInterfaceDetail` is now handled as the normal size query instead of being treated as failure
+- `UsbDevice`: device path now read from the correct offset — `cbSize` is 4 bytes on 32-bit (was 6) and the path string starts at offset 4 after the `cbSize` DWORD (was `DetailDataSize`)
+- `UsbDevice`: `Response[0]` is set to `0xFF` before `HidD_GetFeature` — without the Report ID the call returns `ERROR_INVALID_PARAMETER` (87) and the response buffer stays empty
+- `BatteryReader`: reconnecting the cable during the 90s post-unplug stabilization hold is now detected — two consecutive `isCharging` firmware readings end the hold and report `Charging` immediately, instead of showing `Discharging` for up to 90 seconds
+
+### Changed
+- Executable size reduced from ~349 KB to ~204 KB
+- Version bumped to 1.4.3
+
+---
+
 ## [v1.4.2] — 2026-08-01
 
 ### Changed
