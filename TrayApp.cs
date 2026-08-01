@@ -22,6 +22,7 @@ public sealed class TrayApp : ApplicationContext
     private const uint TpmReturnCmd   = 0x0100;
     private const uint TpmNonotify    = 0x0080;
     private const uint TpmRightButton = 0x0002;
+    private const uint WM_Null        = 0x0000;
 
     private const int CmdStartup       = 1001;
     private const int CmdNotify        = 1002;
@@ -288,6 +289,8 @@ public sealed class TrayApp : ApplicationContext
         var menu = BuildMenu();
         try
         {
+            SetForegroundWindow(_menuAnchor.Handle);
+
             var cmd = TrackPopupMenu(
                 menu,
                 TpmReturnCmd | TpmNonotify | TpmRightButton,
@@ -296,6 +299,8 @@ public sealed class TrayApp : ApplicationContext
                 0,
                 _menuAnchor.Handle,
                 IntPtr.Zero);
+
+            PostMessage(_menuAnchor.Handle, WM_Null, UIntPtr.Zero, UIntPtr.Zero);
 
             if (cmd != 0)
                 ExecuteMenuCommand(cmd);
@@ -408,6 +413,12 @@ public sealed class TrayApp : ApplicationContext
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int TrackPopupMenu(IntPtr hMenu, uint uFlags, int x, int y, int nReserved, IntPtr hwnd, IntPtr prcRect);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, UIntPtr wParam, UIntPtr lParam);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern bool DestroyMenu(IntPtr hMenu);
