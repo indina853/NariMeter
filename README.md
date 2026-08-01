@@ -19,7 +19,7 @@ Synapse installs a constellation of background services — `RazerNahimic`, `Raz
 
 The interface itself buries the battery indicator under multiple clicks inside a large, slow-loading overlay. For a single piece of information — *how much battery does my headset have?* — the friction is remarkable.
 
-NariMeter answers that question with a glanceable tray icon, ~621 KB on disk, and no network activity whatsoever.
+NariMeter answers that question with a glanceable tray icon, ~204 KB on disk, and no network activity whatsoever.
 
 ---
 
@@ -92,6 +92,8 @@ Interface:  5
 ```
 
 Interface 5 is the HID interface responsible for device status reporting, separate from the audio and standard HID interfaces used for button input.
+
+Inside `mi_05`, the battery Feature Report is exposed only by the `col03` collection (UsagePage `0xFF00`) — the other collections (`col01`/`col02`) expose no Feature Reports, so communication targets `col03` exclusively.
 
 ### Step 2 — Capturing the handshake
 
@@ -228,8 +230,8 @@ Output: `bin\Release\net10.0-windows\win-x64\publish\NariMeter.exe`
 
 | Metric | Value |
 |---|---|
-| Executable size | ~621 KB |
-| RAM usage (steady state) | ~9-11 MB (optimized) |
+| Executable size | ~204 KB |
+| RAM usage (steady state) | ~15 MB |
 | CPU usage | < 0.1% |
 | Network activity | None |
 | Disk writes | Only on battery % change and settings updates |
