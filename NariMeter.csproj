@@ -11,9 +11,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <AssemblyVersion>1.4.4</AssemblyVersion>
-    <FileVersion>1.4.4</FileVersion>
-    <Version>1.4.4</Version>
+    <AssemblyVersion>1.4.5</AssemblyVersion>
+    <FileVersion>1.4.5</FileVersion>
+    <Version>1.4.5</Version>
     <Product>NariMeter</Product>
     <Copyright>Copyright © 2026 Klaus Klein</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

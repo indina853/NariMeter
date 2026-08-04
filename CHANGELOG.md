@@ -4,6 +4,13 @@ All notable changes to NariMeter are documented here.
 
 ---
 
+## [v1.4.5] — 2026-08-04
+
+### Changed
+- Tray context menu now follows the Windows light/dark theme in real time (native dark mode via `uxtheme` `SetPreferredAppMode` + `AllowDarkModeForWindow`, reacting to system theme changes)
+
+---
+
 ## [v1.4.4] — 2026-08-01
 
 ### Changed
