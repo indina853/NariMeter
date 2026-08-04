@@ -73,6 +73,7 @@ public sealed class TrayApp : ApplicationContext
             Size            = new Size(1, 1)
         };
         _ = _menuAnchor.Handle;
+        NativeTheme.EnableDarkModeForWindow(_menuAnchor.Handle);
 
         _tray = new NotifyIcon
         {
@@ -285,6 +286,8 @@ public sealed class TrayApp : ApplicationContext
         var menu = BuildMenu();
         try
         {
+            NativeTheme.ApplySystemTheme();
+            NativeTheme.EnableDarkModeForWindow(_menuAnchor.Handle);
             SetForegroundWindow(_menuAnchor.Handle);
 
             var work  = Screen.FromPoint(Cursor.Position).WorkingArea;
